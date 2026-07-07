@@ -34,19 +34,21 @@ async function loadKpis() {
     api('/api/alerts').then(r => r || []).catch(() => []),
   ]);
   const activeAlerts = alerts.length;
+  // tab = where clicking the card takes you (the place you can act on it)
   const cards = [
-    { lbl: 'Servers',        num: o.Servers,          cls: '' },
-    { lbl: 'Active alerts',  num: activeAlerts,       cls: activeAlerts > 0 ? 'crit' : 'ok' },
-    { lbl: 'AG unhealthy',   num: o.AGUnhealthy,      cls: o.AGUnhealthy > 0 ? 'crit' : 'ok' },
-    { lbl: 'Lag critical',   num: o.LagObjectsCrit,   cls: o.LagObjectsCrit > 0 ? 'crit' : 'ok' },
-    { lbl: 'Disks critical', num: o.DisksCrit,        cls: o.DisksCrit > 0 ? 'crit' : 'ok' },
-    { lbl: 'Backups at risk',num: o.BackupsAtRisk,    cls: o.BackupsAtRisk > 0 ? 'crit' : 'ok' },
-    { lbl: 'Job failures 24h', num: o.JobFailures24h, cls: o.JobFailures24h > 0 ? 'warn' : 'ok' },
-    { lbl: 'Blocked sessions', num: o.BlockedSessions, cls: o.BlockedSessions > 0 ? 'crit' : 'ok' },
-    { lbl: 'No owner',       num: o.AppsWithoutOwner, cls: o.AppsWithoutOwner > 0 ? 'warn' : 'ok' },
+    { lbl: 'Servers',        num: o.Servers,          cls: '',  tab: 'servers' },
+    { lbl: 'Active alerts',  num: activeAlerts,       cls: activeAlerts > 0 ? 'crit' : 'ok', tab: 'alerts' },
+    { lbl: 'AG unhealthy',   num: o.AGUnhealthy,      cls: o.AGUnhealthy > 0 ? 'crit' : 'ok', tab: 'ag' },
+    { lbl: 'Lag critical',   num: o.LagObjectsCrit,   cls: o.LagObjectsCrit > 0 ? 'crit' : 'ok', tab: 'lag' },
+    { lbl: 'Disks critical', num: o.DisksCrit,        cls: o.DisksCrit > 0 ? 'crit' : 'ok', tab: 'disk' },
+    { lbl: 'Backups at risk',num: o.BackupsAtRisk,    cls: o.BackupsAtRisk > 0 ? 'crit' : 'ok', tab: 'health' },
+    { lbl: 'Job failures 24h', num: o.JobFailures24h, cls: o.JobFailures24h > 0 ? 'warn' : 'ok', tab: 'health' },
+    { lbl: 'Blocked sessions', num: o.BlockedSessions, cls: o.BlockedSessions > 0 ? 'crit' : 'ok', tab: 'activity' },
+    { lbl: 'No owner',       num: o.AppsWithoutOwner, cls: o.AppsWithoutOwner > 0 ? 'warn' : 'ok', tab: 'owners' },
   ];
   $('#kpis').innerHTML = cards.map(c =>
-    `<div class="kpi ${c.cls}"><div class="num">${c.num ?? '—'}</div><div class="lbl">${c.lbl}</div></div>`).join('');
+    `<div class="kpi ${c.cls}" data-tab="${c.tab}" role="button" tabindex="0" title="Open ${c.lbl}">
+       <div class="num">${c.num ?? '—'}</div><div class="lbl">${c.lbl}</div></div>`).join('');
   $('#lastRun').textContent = o.LastCollection ? 'last collection: ' + new Date(o.LastCollection + 'Z').toLocaleString() : 'no collections yet';
 }
 
@@ -391,13 +393,29 @@ function refreshActive() {
   loadKpis();
 }
 
-$$('.tab').forEach(t => t.addEventListener('click', () => {
+function switchTab(name) {
+  const btn = $(`.tab[data-tab="${name}"]`);
+  if (!btn) return;
   $$('.tab').forEach(x => x.classList.remove('active'));
   $$('.panel').forEach(x => x.classList.remove('active'));
-  t.classList.add('active');
-  $('#tab-' + t.dataset.tab).classList.add('active');
+  btn.classList.add('active');
+  $('#tab-' + name).classList.add('active');
   refreshActive();
-}));
+}
+
+$$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+// KPI cards are shortcuts to the tab where you can act on the number.
+// Delegated (cards re-render every refresh); Enter/Space work for keyboard users.
+$('#kpis').addEventListener('click', e => {
+  const card = e.target.closest('.kpi[data-tab]');
+  if (card) switchTab(card.dataset.tab);
+});
+$('#kpis').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('.kpi[data-tab]');
+  if (card) { e.preventDefault(); switchTab(card.dataset.tab); }
+});
 
 $('#refreshBtn').addEventListener('click', refreshActive);
 $('#growthKey').addEventListener('change', drawGrowth);
