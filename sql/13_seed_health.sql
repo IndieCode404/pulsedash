@@ -11,12 +11,12 @@ DELETE FROM mon.HealthMetric; DELETE FROM mon.QuerySnapshot;
 DELETE FROM mon.WaitStats;    DELETE FROM mon.TableHealth;
 GO
 
-INSERT mon.BackupStatus (ServerName, DatabaseName, RecoveryModel, StateDesc, LastFullBackup, LastDiffBackup, LastLogBackup, LastGoodCheckDb) VALUES
- ('SQLPROD01\AG','SalesDB','FULL','ONLINE', DATEADD(HOUR,-6,SYSUTCDATETIME()), NULL, DATEADD(MINUTE,-12,SYSUTCDATETIME()), DATEADD(DAY,-3,SYSUTCDATETIME())),
- ('SQLPROD01\AG','OrdersDB','FULL','ONLINE', DATEADD(HOUR,-30,SYSUTCDATETIME()), NULL, DATEADD(MINUTE,-8,SYSUTCDATETIME()), DATEADD(DAY,-5,SYSUTCDATETIME())),
- ('SQLPROD03','FinanceDB','FULL','ONLINE', DATEADD(DAY,-9,SYSUTCDATETIME()), DATEADD(DAY,-2,SYSUTCDATETIME()), DATEADD(HOUR,-9,SYSUTCDATETIME()), DATEADD(DAY,-45,SYSUTCDATETIME())),  -- CRIT: stale full+log, old CHECKDB
- ('SQLPROD03','StagingDB','SIMPLE','ONLINE', DATEADD(DAY,-3,SYSUTCDATETIME()), NULL, NULL, '19000101'),  -- WARN: no CHECKDB ever
- ('SQLPROD03','OldAppDB','SIMPLE','OFFLINE', DATEADD(DAY,-40,SYSUTCDATETIME()), NULL, NULL, NULL);       -- CRIT: offline
+INSERT mon.BackupStatus (ServerName, DatabaseName, RecoveryModel, StateDesc, LastFullBackup, LastDiffBackup, LastLogBackup, LastGoodCheckDb, PageVerify, IsAutoShrink) VALUES
+ ('SQLPROD01\AG','SalesDB','FULL','ONLINE', DATEADD(HOUR,-6,SYSUTCDATETIME()), NULL, DATEADD(MINUTE,-12,SYSUTCDATETIME()), DATEADD(DAY,-3,SYSUTCDATETIME()), 'CHECKSUM', 0),
+ ('SQLPROD01\AG','OrdersDB','FULL','ONLINE', DATEADD(HOUR,-30,SYSUTCDATETIME()), NULL, DATEADD(MINUTE,-8,SYSUTCDATETIME()), DATEADD(DAY,-5,SYSUTCDATETIME()), 'CHECKSUM', 0),
+ ('SQLPROD03','FinanceDB','FULL','ONLINE', DATEADD(DAY,-9,SYSUTCDATETIME()), DATEADD(DAY,-2,SYSUTCDATETIME()), DATEADD(HOUR,-9,SYSUTCDATETIME()), DATEADD(DAY,-45,SYSUTCDATETIME()), 'CHECKSUM', 0),  -- CRIT: stale full+log, old CHECKDB
+ ('SQLPROD03','StagingDB','SIMPLE','ONLINE', DATEADD(DAY,-3,SYSUTCDATETIME()), NULL, NULL, '19000101', 'TORN_PAGE_DETECTION', 1),  -- WARN: no CHECKDB, TORN_PAGE, auto-shrink ON
+ ('SQLPROD03','OldAppDB','SIMPLE','OFFLINE', DATEADD(DAY,-40,SYSUTCDATETIME()), NULL, NULL, NULL, 'NONE', 0);       -- CRIT: offline
 GO
 
 INSERT mon.JobFailure (ServerName, JobName, StepName, RunAt, Message) VALUES
@@ -29,6 +29,8 @@ INSERT mon.HealthMetric (Platform, ServerName, MetricName, MetricValue) VALUES
  ('MSSQL','SQLPROD01\AG','user_sessions',134),('MSSQL','SQLPROD01\AG','blocked_sessions',0),('MSSQL','SQLPROD01\AG','uptime_hours',811),
  ('MSSQL','SQLPROD03','page_life_expectancy', 180),('MSSQL','SQLPROD03','memory_grants_pending',2),
  ('MSSQL','SQLPROD03','user_sessions',67),('MSSQL','SQLPROD03','blocked_sessions',3),('MSSQL','SQLPROD03','uptime_hours',2190),
+ ('MSSQL','SQLPROD01\AG','cpu_pct',34),('MSSQL','SQLPROD01\AG','suspect_pages',0),('MSSQL','SQLPROD01\AG','deadlocks_total',12),
+ ('MSSQL','SQLPROD03','cpu_pct',91),('MSSQL','SQLPROD03','suspect_pages',2),('MSSQL','SQLPROD03','deadlocks_total',147),
  ('Redshift','rs-analytics','queued_queries',4),('Redshift','rs-analytics','db_connections',88),('Redshift','rs-analytics','load_errors_24h',2);
 GO
 

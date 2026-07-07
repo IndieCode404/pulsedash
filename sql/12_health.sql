@@ -24,8 +24,14 @@ CREATE TABLE mon.BackupStatus
     LastFullBackup  DATETIME2(0) NULL,
     LastDiffBackup  DATETIME2(0) NULL,
     LastLogBackup   DATETIME2(0) NULL,
-    LastGoodCheckDb DATETIME2(0) NULL         -- DBCC CHECKDB last known good
+    LastGoodCheckDb DATETIME2(0) NULL,        -- DBCC CHECKDB last known good
+    PageVerify      VARCHAR(30)  NULL,        -- should be CHECKSUM
+    IsAutoShrink    BIT          NULL         -- should be 0
 );
+GO
+-- upgrade path for databases deployed before the audit additions
+IF COL_LENGTH('mon.BackupStatus','PageVerify') IS NULL
+    ALTER TABLE mon.BackupStatus ADD PageVerify VARCHAR(30) NULL, IsAutoShrink BIT NULL;
 GO
 IF OBJECT_ID('mon.JobFailure') IS NULL
 CREATE TABLE mon.JobFailure
@@ -104,6 +110,7 @@ WITH latest AS
 )
 SELECT ServerName, DatabaseName, RecoveryModel, StateDesc,
        LastFullBackup, LastDiffBackup, LastLogBackup,
+       PageVerify, IsAutoShrink,
        LastGoodCheckDb = NULLIF(LastGoodCheckDb, '19000101'),
        HoursSinceFull  = DATEDIFF(HOUR, LastFullBackup, SYSUTCDATETIME()),
        MinsSinceLog    = CASE WHEN RecoveryModel IN ('FULL','BULK_LOGGED')
@@ -122,6 +129,8 @@ SELECT ServerName, DatabaseName, RecoveryModel, StateDesc,
              AND LastLogBackup < DATEADD(HOUR, -1, SYSUTCDATETIME()) THEN 'WARN'
            WHEN NULLIF(LastGoodCheckDb,'19000101') IS NULL
              OR LastGoodCheckDb < DATEADD(DAY, -30, SYSUTCDATETIME()) THEN 'WARN'
+           WHEN PageVerify IS NOT NULL AND PageVerify <> 'CHECKSUM' THEN 'WARN'   -- sp_Blitz classic
+           WHEN IsAutoShrink = 1 THEN 'WARN'                                       -- never auto-shrink
            ELSE 'OK' END
 FROM latest WHERE rn = 1;
 GO
@@ -152,6 +161,9 @@ SELECT Platform, ServerName, MetricName, MetricValue, Detail, CollectedAt,
            WHEN MetricName = 'blocked_sessions'      AND MetricValue > 0   THEN 'WARN'
            WHEN MetricName = 'queued_queries'        AND MetricValue > 0   THEN 'WARN'
            WHEN MetricName = 'load_errors_24h'       AND MetricValue > 0   THEN 'WARN'
+           WHEN MetricName = 'suspect_pages'         AND MetricValue > 0   THEN 'CRIT'  -- corruption!
+           WHEN MetricName = 'cpu_pct'               AND MetricValue >= 95 THEN 'CRIT'
+           WHEN MetricName = 'cpu_pct'               AND MetricValue >= 80 THEN 'WARN'
            ELSE 'OK' END
 FROM latest WHERE rn = 1;
 GO

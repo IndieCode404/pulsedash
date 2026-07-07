@@ -131,6 +131,8 @@ async function loadHealth() {
     { h: 'Hrs since full', k: 'HoursSinceFull', f: ago },
     { h: 'Last log', k: 'LastLogBackup', f: (v, r) => r.RecoveryModel === 'SIMPLE' ? 'n/a' : fmtDt(v) },
     { h: 'Last good CHECKDB', k: 'LastGoodCheckDb', f: fmtDt },
+    { h: 'Page verify', k: 'PageVerify', f: v => v == null ? '—' : (v === 'CHECKSUM' ? v : `<b>${esc(v)}</b> ⚠`) },
+    { h: 'Auto-shrink', k: 'IsAutoShrink', f: v => v ? '<b>ON</b> ⚠' : 'off' },
   ]);
   $('#jobsTable').innerHTML = table(jobs, [
     { h: 'Server', k: 'ServerName' },
@@ -146,6 +148,7 @@ const VITAL_LABELS = {
   page_life_expectancy: 'Page life expectancy (s)', memory_grants_pending: 'Memory grants pending',
   user_sessions: 'User sessions', blocked_sessions: 'Blocked sessions', uptime_hours: 'Uptime (h)',
   queued_queries: 'Queued queries (WLM)', db_connections: 'Connections', load_errors_24h: 'Load errors (24h)',
+  cpu_pct: 'CPU %', suspect_pages: 'Suspect pages (corruption!)', deadlocks_total: 'Deadlocks (since restart)',
 };
 
 async function loadActivity() {

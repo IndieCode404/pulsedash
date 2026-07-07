@@ -29,7 +29,8 @@ BEGIN
     ;WITH src AS
     (
         SELECT Platform, ServerName, VolumeName,
-               x = CAST(CollectedAt AS FLOAT),        -- days since 1900 (float)
+               -- days since 2000-01-01 as float (datetime2 cannot be CAST to float)
+               x = DATEDIFF_BIG(SECOND, '20000101', CollectedAt) / 86400.0,
                y = CAST(UsedBytes AS FLOAT),
                TotalBytes, UsedBytes, UsedPct, CollectedAt
         FROM mon.DiskUsage

@@ -65,11 +65,16 @@ SELECT DatabaseName=d.name, RecoveryModel=d.recovery_model_desc, StateDesc=d.sta
        LastFullBackup=MAX(CASE WHEN b.type='D' THEN b.backup_finish_date END),
        LastDiffBackup=MAX(CASE WHEN b.type='I' THEN b.backup_finish_date END),
        LastLogBackup =MAX(CASE WHEN b.type='L' THEN b.backup_finish_date END),
-       LastGoodCheckDb=CONVERT(datetime2(0), DATABASEPROPERTYEX(d.name,'LastGoodCheckDbTime'))
+       LastGoodCheckDb=CONVERT(datetime2(0), DATABASEPROPERTYEX(d.name,'LastGoodCheckDbTime')),
+       PageVerify=d.page_verify_option_desc,
+       IsAutoShrink=d.is_auto_shrink_on
 FROM sys.databases d
-LEFT JOIN msdb.dbo.backupset b ON b.database_name=d.name
+LEFT JOIN msdb.dbo.backupset b
+       ON b.database_name = d.name
+      AND b.is_copy_only = 0                 -- copy-only backups don't reset RPO
+      AND b.is_snapshot  = 0                 -- neither do VSS snapshot backups
 WHERE d.database_id <> 2                     -- skip tempdb
-GROUP BY d.name, d.recovery_model_desc, d.state_desc;
+GROUP BY d.name, d.recovery_model_desc, d.state_desc, d.page_verify_option_desc, d.is_auto_shrink_on;
 "@
 
 $Q_JOBS = @"
@@ -93,7 +98,26 @@ SELECT 'user_sessions', (SELECT CAST(COUNT(*) AS float) FROM sys.dm_exec_session
 UNION ALL
 SELECT 'blocked_sessions', (SELECT CAST(COUNT(*) AS float) FROM sys.dm_exec_requests WHERE blocking_session_id<>0), NULL
 UNION ALL
-SELECT 'uptime_hours', (SELECT CAST(DATEDIFF(HOUR, sqlserver_start_time, GETDATE()) AS float) FROM sys.dm_os_sys_info), NULL;
+SELECT 'uptime_hours', (SELECT CAST(DATEDIFF(HOUR, sqlserver_start_time, GETDATE()) AS float) FROM sys.dm_os_sys_info), NULL
+UNION ALL
+-- SQL Server CPU % from the scheduler-monitor ring buffer (last sample)
+SELECT 'cpu_pct',
+       CAST(ISNULL((
+         SELECT TOP (1)
+                rec.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]','int')
+         FROM (SELECT CONVERT(xml, record) AS rec
+               FROM sys.dm_os_ring_buffers
+               WHERE ring_buffer_type='RING_BUFFER_SCHEDULER_MONITOR'
+                 AND record LIKE '%<SystemHealth>%') AS t
+         ORDER BY rec.value('(./Record/@time)[1]','bigint') DESC), 0) AS float), NULL
+UNION ALL
+-- corruption early-warning: any rows here mean SQL hit a bad page
+SELECT 'suspect_pages', (SELECT CAST(COUNT(*) AS float) FROM msdb.dbo.suspect_pages), NULL
+UNION ALL
+-- cumulative since restart (trend it; a jump between collections = new deadlocks)
+SELECT 'deadlocks_total',
+       (SELECT CAST(cntr_value AS float) FROM sys.dm_os_performance_counters
+        WHERE counter_name='Number of Deadlocks/sec' AND instance_name='_Total'), NULL;
 "@
 
 $Q_ACTIVITY = @"
