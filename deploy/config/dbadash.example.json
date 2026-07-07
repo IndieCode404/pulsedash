@@ -9,10 +9,14 @@
   },
 
   "cms": {
-    "//": "Central Management Server + the registered-server group to fan out to.",
-    "//alt": "If you don't use CMS, set 'group' to null and list instances in mssqlInstances instead.",
+    "//": "MSSQL targets come from THREE sources, all merged: (1) this CMS group,",
+    "//2": "(2) the mssqlInstances list below, (3) servers added on the dashboard 'Servers' tab.",
+    "//3": "No CMS? Set 'group' to null and use the other two sources.",
     "cmsInstance": "SQLMON01",
     "group": "PROD-SQL",
+
+    "//mssqlInstances": "Strings connect with Windows auth. For SQL auth use an object:",
+    "//example": "[ \"SQLPROD07\", { \"instance\": \"SQLDMZ01\", \"user\": \"dbadash_ro\", \"password\": \"\", \"passwordEnvVar\": \"DBADASH_DMZ_PWD\" } ]",
     "mssqlInstances": []
   },
 

@@ -99,6 +99,8 @@ tr:hover td { background:rgba(255,255,255,.02); }
 }
 .form input:focus, .form select:focus { outline:none; border-color:var(--accent); }
 .form-actions { display:flex; align-items:center; gap:10px; margin-top:16px; }
+.form .note { font-size:12px; margin:14px 0 0; line-height:1.5; }
+.form .note code { background:var(--bg); padding:1px 5px; border-radius:4px; }
 .link { color:var(--accent); cursor:pointer; }
 .link.danger { color:var(--crit); }
 

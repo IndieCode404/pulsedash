@@ -36,6 +36,7 @@
     <button class="tab" data-tab="cost">Cost Anomaly</button>
     <button class="tab" data-tab="alerts">Alerts</button>
     <button class="tab" data-tab="owners">App Owners</button>
+    <button class="tab" data-tab="servers">Servers</button>
   </nav>
 
   <main>
@@ -127,6 +128,41 @@
       </div>
 
       <div id="ownersTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-servers" class="panel">
+      <div class="panel-head">
+        <h2>Monitored Servers</h2>
+        <button id="newServerBtn" class="btn primary">+ Add server</button>
+      </div>
+
+      <div id="serverForm" class="card form hidden">
+        <div class="grid">
+          <label>Server / Cluster name<input id="s_ServerName" placeholder="SQLPROD07  or  HOST\INSTANCE" required /></label>
+          <label>Platform
+            <select id="s_Platform"><option>MSSQL</option><option>Redshift</option></select>
+          </label>
+          <label>Environment
+            <select id="s_Environment"><option>PROD</option><option>UAT</option><option>DEV</option></select>
+          </label>
+          <label>Friendly name<input id="s_FriendlyName" /></label>
+          <label>Active
+            <select id="s_IsActive"><option value="1">Yes — collect</option><option value="0">No — paused</option></select>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button id="saveServerBtn" class="btn primary">Save</button>
+          <button id="cancelServerBtn" class="btn">Cancel</button>
+          <span id="serverFormMsg" class="muted"></span>
+        </div>
+        <p class="muted note">MSSQL servers added here are collected with <b>Windows/integrated auth</b> — no
+        connection string needed (the collector account must have VIEW SERVER STATE + msdb read on the target).
+        For SQL-auth targets use <code>cms.mssqlInstances</code> in <code>deploy\config\dbadash.json</code>;
+        Redshift clusters also need their host/port/credentials in the config's <code>redshift</code> block —
+        adding one here only registers it in inventory.</p>
+      </div>
+
+      <div id="serversTable" class="tablewrap"></div>
     </section>
   </main>
 

@@ -124,20 +124,43 @@ WHERE wait_type NOT IN ('CLR_SEMAPHORE','LAZYWRITER_SLEEP','RESOURCE_QUEUE','SLE
 ORDER BY wait_time_ms DESC;
 "@
 
-# ---- Resolve the list of MSSQL instances (CMS group, or explicit list) ----
-$instances = @()
+# ---- Resolve MSSQL targets from THREE sources ----------------------------
+#  1. CMS registered-server group          (Windows auth)
+#  2. config cms.mssqlInstances            (string = Windows auth,
+#       or { "instance": "...", "user": "...", "password": "..." } = SQL auth)
+#  3. cfg.Servers rows added via the dashboard "Servers" tab (Windows auth)
+$targets = @{}    # name -> @{ User = ...; Password = ... } (empty = integrated)
 if ($cfg.cms.group) {
     Write-Host "Reading CMS group '$($cfg.cms.group)' from $($cfg.cms.cmsInstance)..." -ForegroundColor Cyan
-    $instances = Get-CmsRegisteredServers -CmsInstance $cfg.cms.cmsInstance -Group $cfg.cms.group
+    foreach ($n in (Get-CmsRegisteredServers -CmsInstance $cfg.cms.cmsInstance -Group $cfg.cms.group)) {
+        $targets[[string]$n] = @{}
+    }
 }
-if ($cfg.cms.mssqlInstances) { $instances += $cfg.cms.mssqlInstances }
-$instances = $instances | Select-Object -Unique
-Write-Host "MSSQL targets: $($instances -join ', ')" -ForegroundColor Gray
+foreach ($e in @($cfg.cms.mssqlInstances)) {
+    if ($null -eq $e) { continue }
+    if ($e -is [string]) { $targets[$e] = @{} }
+    else {
+        $pwd = if ($e.passwordEnvVar -and (Get-Item "env:$($e.passwordEnvVar)" -ErrorAction SilentlyContinue)) {
+                   (Get-Item "env:$($e.passwordEnvVar)").Value
+               } else { $e.password }
+        $targets[[string]$e.instance] = @{ User = $e.user; Password = $pwd }
+    }
+}
+try {
+    $uiSrv = Invoke-SqlQuery -ConnString $centralConn -Query `
+        "SELECT ServerName FROM cfg.Servers WHERE IsActive = 1 AND Platform = 'MSSQL';"
+    foreach ($r in $uiSrv.Rows) {
+        $n = [string]$r['ServerName']
+        if (-not $targets.ContainsKey($n)) { $targets[$n] = @{} }
+    }
+} catch { Write-Warning "could not read cfg.Servers: $($_.Exception.Message)" }
+Write-Host "MSSQL targets: $($targets.Keys -join ', ')" -ForegroundColor Gray
 
 # ---- Fan out ----
-foreach ($inst in $instances) {
+foreach ($inst in @($targets.Keys)) {
     $now  = [datetime]::UtcNow
-    $conn = Get-SqlConnString -Instance $inst -Database 'master'
+    $cred = $targets[$inst]
+    $conn = Get-SqlConnString -Instance $inst -Database 'master' -User $cred.User -Password $cred.Password
     try {
         Register-Server -CentralConn $centralConn -ServerName $inst -Platform 'MSSQL'
         $ag  = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_AGSYNC) -ServerName $inst -CollectedAt $now

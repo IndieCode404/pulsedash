@@ -108,6 +108,32 @@ function Upsert-Owner($body) {
     } finally { $c.Dispose() }
 }
 
+function Upsert-Server($body) {
+    $c = New-Object System.Data.SqlClient.SqlConnection $connString
+    try {
+        $c.Open(); $cmd = $c.CreateCommand()
+        $cmd.CommandText = 'cfg.usp_Server_Upsert'
+        $cmd.CommandType = [System.Data.CommandType]::StoredProcedure
+        [void]$cmd.Parameters.AddWithValue('@ServerName', [string]$body.ServerName)
+        [void]$cmd.Parameters.AddWithValue('@Platform', $(if($body.Platform){$body.Platform}else{'MSSQL'}))
+        [void]$cmd.Parameters.AddWithValue('@Environment', $(if($body.Environment){$body.Environment}else{'PROD'}))
+        $fn = if ([string]::IsNullOrEmpty([string]$body.FriendlyName)) { [DBNull]::Value } else { $body.FriendlyName }
+        [void]$cmd.Parameters.AddWithValue('@FriendlyName', $fn)
+        [void]$cmd.Parameters.AddWithValue('@IsActive', $(if($null -ne $body.IsActive -and -not $body.IsActive){0}else{1}))
+        [void]$cmd.ExecuteNonQuery()
+    } finally { $c.Dispose() }
+}
+
+function Delete-Server([int]$id) {
+    $c = New-Object System.Data.SqlClient.SqlConnection $connString
+    try {
+        $c.Open(); $cmd = $c.CreateCommand()
+        $cmd.CommandText = 'cfg.usp_Server_Delete'; $cmd.CommandType = 'StoredProcedure'
+        [void]$cmd.Parameters.AddWithValue('@ServerID', $id)
+        [void]$cmd.ExecuteNonQuery()
+    } finally { $c.Dispose() }
+}
+
 function Delete-Owner([int]$id) {
     $c = New-Object System.Data.SqlClient.SqlConnection $connString
     try {
@@ -167,6 +193,15 @@ try {
                 '^GET /api/activity$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.ActiveQueries ORDER BY CASE RowStatus WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, DurationSec DESC;') ; break }
                 '^GET /api/waits$'    { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TopWaits ORDER BY ServerName, WaitTimeMs DESC;') ; break }
                 '^GET /api/tablehealth$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TableHealth ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, UnsortedPct DESC;') ; break }
+                '^GET /api/servers$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.Servers ORDER BY IsActive DESC, Platform, ServerName;') ; break }
+                '^POST /api/servers/delete$' {
+                    $body = (New-Object IO.StreamReader($ctx.Request.InputStream)).ReadToEnd() | ConvertFrom-Json
+                    Delete-Server ([int]$body.ServerID); Send-Json $ctx @{ ok = $true }; break
+                }
+                '^POST /api/servers$' {
+                    $body = (New-Object IO.StreamReader($ctx.Request.InputStream)).ReadToEnd() | ConvertFrom-Json
+                    Upsert-Server $body; Send-Json $ctx @{ ok = $true }; break
+                }
                 '^POST /api/owners/delete$' {
                     $body = (New-Object IO.StreamReader($ctx.Request.InputStream)).ReadToEnd() | ConvertFrom-Json
                     Delete-Owner ([int]$body.AppOwnerID); Send-Json $ctx @{ ok = $true }; break

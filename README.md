@@ -102,6 +102,28 @@ Check `SELECT * FROM DBADash.cfg.CollectionLog ORDER BY RunAt DESC;` — every
 instance should show `OK`. Unreachable servers log an `ERROR` row and the run
 continues.
 
+### 3b. Adding servers — where do connection strings go?
+You never write full connection strings; connections are assembled by the
+collector. MSSQL targets are merged from **three sources**:
+
+| How | Where | Auth |
+|-----|-------|------|
+| **CMS group** (best for fleets) | Register instances in SSMS → Central Management Servers → your group; set `cms.group` in the config | Windows auth |
+| **Dashboard "Servers" tab** | Click *+ Add server* — writes to `cfg.Servers`, picked up next collection cycle | Windows auth |
+| **Config list** (`cms.mssqlInstances`) | Strings for Windows auth, or objects for SQL auth: `{ "instance": "SQLDMZ01", "user": "dbadash_ro", "password": "", "passwordEnvVar": "DBADASH_DMZ_PWD" }` | Either |
+
+Whatever the source, the collector account needs **VIEW SERVER STATE** +
+**db_datareader on msdb** on each target.
+
+**Redshift** clusters are defined only in the config's `redshift` array
+(host/port/database/user — that *is* the connection info, used to build the
+ODBC string; or set `dsn` to use a preconfigured DSN). The Servers tab can
+register a cluster in inventory, but connectivity always comes from the config.
+
+To pause a server, set it **Paused** on the Servers tab (sticks unless it's
+still in the CMS group or config, which re-activate it); delete removes it
+from inventory.
+
 ### 4. Schedule it
 Open `agent\Create-AgentJobs.sql` in SSMS, edit `@ScriptPath` / `@IntervalMinutes`,
 run it. Creates the **"DBADash - Collect"** job (default: every 15 min).

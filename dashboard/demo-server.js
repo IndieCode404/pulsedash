@@ -15,7 +15,16 @@ let owners = [
   { AppOwnerID:3, ServerName:'rs-analytics', DatabaseName:'(instance)', AppName:'Exec Analytics', Criticality:'Tier2', PrimaryOwner:'Lena Park', SecondaryOwner:'Omar Reed', Team:'Data & Insights', Email:'data-team@corp.com', OnCallPhone:'+1-555-0199', Notes:'Nightly ETL 02:00 UTC' },
 ];
 
+let servers = [
+  { ServerID:1, ServerName:'SQLPROD01\\AG', Platform:'MSSQL', Environment:'PROD', FriendlyName:'Sales AG Primary', IsActive:true, LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'OK', LastMessage:'AG=4 Disk=2 Lag=2' },
+  { ServerID:2, ServerName:'SQLPROD02\\AG', Platform:'MSSQL', Environment:'PROD', FriendlyName:'Sales AG Secondary', IsActive:true, LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'OK', LastMessage:'AG=4 Disk=2' },
+  { ServerID:3, ServerName:'SQLPROD03', Platform:'MSSQL', Environment:'PROD', FriendlyName:'Finance Standalone', IsActive:true, LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'ERROR', LastMessage:'Login timeout expired' },
+  { ServerID:4, ServerName:'rs-analytics', Platform:'Redshift', Environment:'PROD', FriendlyName:'Analytics Cluster', IsActive:true, LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'OK', LastMessage:'Disk=1 Fresh=8' },
+  { ServerID:5, ServerName:'SQLUAT01', Platform:'MSSQL', Environment:'UAT', FriendlyName:'UAT box', IsActive:false, LastCollectedAt:null, LastStatus:null, LastMessage:null },
+];
+
 const DATA = {
+  '/api/servers': () => [...servers].sort((a,b)=>(b.IsActive-a.IsActive)||a.ServerName.localeCompare(b.ServerName)),
   '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
   '/api/backups': () => [
     { Status:'CRIT', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', StateDesc:'ONLINE', RecoveryModel:'FULL', LastFullBackup:new Date(Date.now()-9*864e5).toISOString().slice(0,19), HoursSinceFull:216, LastLogBackup:new Date(Date.now()-9*36e5).toISOString().slice(0,19), LastGoodCheckDb:new Date(Date.now()-45*864e5).toISOString().slice(0,19) },
@@ -108,6 +117,17 @@ http.createServer(async (req,res)=>{
     const o = JSON.parse(await body(req)); o.AppOwnerID=Number(o.AppOwnerID)||0;
     if(o.AppOwnerID) owners=owners.map(x=>x.AppOwnerID===o.AppOwnerID?{...x,...o}:x);
     else { o.AppOwnerID=Math.max(0,...owners.map(x=>x.AppOwnerID))+1; owners.push(o); }
+    res.setHeader('Content-Type','application/json'); return res.end('{"ok":true}');
+  }
+  if (req.method==='POST' && url==='/api/servers') {
+    const o = JSON.parse(await body(req));
+    const ex = servers.find(x=>x.ServerName===o.ServerName);
+    if (ex) Object.assign(ex, o);
+    else servers.push({ ServerID:Math.max(0,...servers.map(x=>x.ServerID))+1, LastCollectedAt:null, LastStatus:null, LastMessage:null, ...o });
+    res.setHeader('Content-Type','application/json'); return res.end('{"ok":true}');
+  }
+  if (req.method==='POST' && url==='/api/servers/delete') {
+    const o = JSON.parse(await body(req)); servers=servers.filter(x=>x.ServerID!==Number(o.ServerID));
     res.setHeader('Content-Type','application/json'); return res.end('{"ok":true}');
   }
   if (req.method==='POST' && url==='/api/owners/delete') {

@@ -326,12 +326,65 @@ async function saveOwner() {
   showForm(false); clearForm(); loadOwners(); loadKpis();
 }
 
+/* ---- servers tab (inventory management) ---- */
+const S_FIELDS = ['ServerName','Platform','Environment','FriendlyName','IsActive'];
+
+async function loadServers() {
+  const rows = await api('/api/servers');
+  $('#serversTable').innerHTML = table(rows, [
+    { h: 'Active',   k: 'IsActive', f: v => v ? '<span class="pill OK">ACTIVE</span>' : '<span class="pill WARN">PAUSED</span>' },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Platform', k: 'Platform' },
+    { h: 'Env',      k: 'Environment' },
+    { h: 'Friendly name', k: 'FriendlyName' },
+    { h: 'Last collected', k: 'LastCollectedAt', f: v => v ? new Date(v + 'Z').toLocaleString() : 'never' },
+    { h: 'Last status', k: 'LastStatus', f: (v, r) => v == null ? '—'
+        : v === 'OK' ? pill('OK') : `<span class="pill CRIT" title="${esc(r.LastMessage)}">ERROR</span>` },
+    { h: '', k: 'ServerID', f: (v, r) =>
+        `<span class="link" onclick='editServer(${JSON.stringify(r).replace(/'/g,"&#39;")})'>edit</span> ·
+         <span class="link danger" onclick="delServer(${v})">del</span>` },
+  ]);
+}
+
+function showServerForm(show) { $('#serverForm').classList.toggle('hidden', !show); $('#serverFormMsg').textContent = ''; }
+function clearServerForm() {
+  $('#s_ServerName').value = ''; $('#s_Platform').value = 'MSSQL';
+  $('#s_Environment').value = 'PROD'; $('#s_FriendlyName').value = ''; $('#s_IsActive').value = '1';
+}
+
+window.editServer = function (r) {
+  showServerForm(true);
+  $('#s_ServerName').value = r.ServerName || '';
+  $('#s_Platform').value = r.Platform || 'MSSQL';
+  $('#s_Environment').value = r.Environment || 'PROD';
+  $('#s_FriendlyName').value = r.FriendlyName || '';
+  $('#s_IsActive').value = r.IsActive ? '1' : '0';
+};
+
+window.delServer = async function (id) {
+  if (!confirm('Remove this server from inventory? (History rows are kept until purge.)')) return;
+  await api('/api/servers/delete', { method: 'POST', body: JSON.stringify({ ServerID: id }) });
+  loadServers(); loadKpis();
+};
+
+async function saveServer() {
+  const body = {
+    ServerName: $('#s_ServerName').value.trim(), Platform: $('#s_Platform').value,
+    Environment: $('#s_Environment').value, FriendlyName: $('#s_FriendlyName').value.trim(),
+    IsActive: $('#s_IsActive').value === '1',
+  };
+  if (!body.ServerName) { $('#serverFormMsg').textContent = 'Server name is required.'; return; }
+  const res = await api('/api/servers', { method: 'POST', body: JSON.stringify(body) });
+  if (res.error) { $('#serverFormMsg').textContent = 'Error: ' + res.error; return; }
+  showServerForm(false); clearServerForm(); loadServers(); loadKpis();
+}
+
 /* ---- wiring ---- */
 function refreshActive() {
   const t = $('.tab.active').dataset.tab;
   ({ ag: loadAg, lag: loadLag, disk: loadDisk, growth: loadGrowth,
      health: loadHealth, activity: loadActivity,
-     cost: loadCost, alerts: loadAlerts, owners: loadOwners }[t])();
+     cost: loadCost, alerts: loadAlerts, owners: loadOwners, servers: loadServers }[t])();
   loadKpis();
 }
 
@@ -349,6 +402,9 @@ $('#costKey').addEventListener('change', drawCostTrend);
 $('#newOwnerBtn').addEventListener('click', () => { clearForm(); showForm(true); });
 $('#cancelOwnerBtn').addEventListener('click', () => showForm(false));
 $('#saveOwnerBtn').addEventListener('click', saveOwner);
+$('#newServerBtn').addEventListener('click', () => { clearServerForm(); showServerForm(true); });
+$('#cancelServerBtn').addEventListener('click', () => showServerForm(false));
+$('#saveServerBtn').addEventListener('click', saveServer);
 
 let timer = null;
 function setAuto(on) { clearInterval(timer); if (on) timer = setInterval(refreshActive, 30000); }
