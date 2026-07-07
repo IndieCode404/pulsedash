@@ -193,6 +193,11 @@ try {
                 '^GET /api/activity$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.ActiveQueries ORDER BY CASE RowStatus WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, DurationSec DESC;') ; break }
                 '^GET /api/waits$'    { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TopWaits ORDER BY ServerName, WaitTimeMs DESC;') ; break }
                 '^GET /api/tablehealth$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TableHealth ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, UnsortedPct DESC;') ; break }
+                '^GET /api/topqueries$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TopQueries ORDER BY TotalCpuMs DESC;') ; break }
+                '^GET /api/failedlogins$'{ Send-Json $ctx (Query-Json 'SELECT * FROM rpt.FailedLogins ORDER BY EventTime DESC;') ; break }
+                '^GET /api/logins$'      { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.LoginActivity ORDER BY ServerName, SessionCount DESC;') ; break }
+                '^GET /api/staletables$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.StaleTables ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, SizeGB DESC;') ; break }
+                '^GET /api/spectrum$'    { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.SpectrumByTable ORDER BY TBScanned DESC;') ; break }
                 '^GET /api/servers$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.Servers ORDER BY IsActive DESC, Platform, ServerName;') ; break }
                 '^POST /api/servers/delete$' {
                     $body = (New-Object IO.StreamReader($ctx.Request.InputStream)).ReadToEnd() | ConvertFrom-Json

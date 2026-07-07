@@ -29,6 +29,9 @@ $qCost  = Get-SqlBlock -Path $metricsFile -Name 'COST'
 $qThl   = Get-SqlBlock -Path $metricsFile -Name 'TABLE_HEALTH'
 $qAct   = Get-SqlBlock -Path $metricsFile -Name 'ACTIVITY'
 $qVit   = Get-SqlBlock -Path $metricsFile -Name 'RS_VITALS'
+$qScan  = Get-SqlBlock -Path $metricsFile -Name 'TABLE_SCAN'
+$qSpec  = Get-SqlBlock -Path $metricsFile -Name 'SPECTRUM'
+$qLogin = Get-SqlBlock -Path $metricsFile -Name 'RS_LOGINS'
 
 function Get-RedshiftOdbcConnString($rs) {
     if ($rs.dsn) { return "DSN=$($rs.dsn);" }
@@ -84,6 +87,14 @@ foreach ($rs in $cfg.redshift) {
         # cluster vitals (queued queries, connections, load errors)
         $vit = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qVit) -ServerName $rs.clusterId -Platform 'Redshift' -CollectedAt $now
         $n7  = Write-BulkTable -ConnString $centralConn -Table $vit -Destination 'mon.HealthMetric'
+
+        # last-scan times (stale-data detection), Spectrum by table, failed logins
+        $scn = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qScan) -ServerName $rs.clusterId -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $scn -Destination 'mon.TableScan')
+        $spc = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qSpec) -ServerName $rs.clusterId -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $spc -Destination 'mon.SpectrumScan')
+        $flg = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qLogin) -ServerName $rs.clusterId -Platform 'Redshift' -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $flg -Destination 'mon.FailedLogin')
 
         Write-CollectionLog -CentralConn $centralConn -Collector 'Redshift' -ServerName $rs.clusterId `
             -Status 'OK' -RowsLoaded ($n1+$n2+$n3+$n4+$n5+$n6+$n7) `

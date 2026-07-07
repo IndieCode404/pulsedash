@@ -59,6 +59,32 @@ const DATA = {
     { ServerName:'SQLPROD03', WaitType:'CXPACKET', WaitTimeMs:3100000, WaitPct:13.0 },
     { ServerName:'SQLPROD01\\AG', WaitType:'HADR_SYNC_COMMIT', WaitTimeMs:4200000, WaitPct:33.5 },
   ],
+  '/api/topqueries': () => [
+    { ServerName:'SQLPROD03', DatabaseName:'FinanceDB', ExecCount:184200, TotalCpuMs:1892000, AvgCpuMs:10, AvgDurMs:14, AvgReads:2210, QueryText:'SELECT SUM(Amount) FROM dbo.GLEntries WHERE Period = @p AND CostCenter = @cc' },
+    { ServerName:'SQLPROD03', DatabaseName:'FinanceDB', ExecCount:12, TotalCpuMs:920000, AvgCpuMs:76666, AvgDurMs:81234, AvgReads:18400000, QueryText:'DELETE FROM dbo.GLEntries WHERE Period = @old  /* nightly purge, missing index on Period */' },
+    { ServerName:'SQLPROD01\\AG', DatabaseName:'SalesDB', ExecCount:96500, TotalCpuMs:410000, AvgCpuMs:4, AvgDurMs:6, AvgReads:180, QueryText:'SELECT TOP 1 * FROM dbo.Orders WHERE OrderID = @id' },
+  ],
+  '/api/failedlogins': () => [
+    { Platform:'MSSQL', ServerName:'SQLPROD03', EventTime:new Date(Date.now()-25*6e4).toISOString().slice(0,19), Message:"Login failed for user 'app_finance'. Reason: Password did not match. [CLIENT: 10.2.1.44]" },
+    { Platform:'MSSQL', ServerName:'SQLPROD03', EventTime:new Date(Date.now()-26*6e4).toISOString().slice(0,19), Message:"Login failed for user 'sa'. Reason: Password did not match. [CLIENT: 10.2.9.101]" },
+    { Platform:'Redshift', ServerName:'rs-analytics', EventTime:new Date(Date.now()-3*36e5).toISOString().slice(0,19), Message:'Failed auth: user=etl_user from 10.4.2.19' },
+  ],
+  '/api/logins': () => [
+    { ServerName:'SQLPROD01\\AG', LoginName:'app_sales', HostName:'APPSRV01', ProgramName:'SalesPortal', SessionCount:84, LastLogin:new Date(Date.now()-3*6e4).toISOString().slice(0,19) },
+    { ServerName:'SQLPROD03', LoginName:'etl_svc', HostName:'ETL01', ProgramName:'DTSExec', SessionCount:6, LastLogin:new Date(Date.now()-40*6e4).toISOString().slice(0,19) },
+    { ServerName:'SQLPROD03', LoginName:'krisn_admin', HostName:'LT-KRISN', ProgramName:'SSMS', SessionCount:2, LastLogin:new Date(Date.now()-8*6e4).toISOString().slice(0,19) },
+  ],
+  '/api/staletables': () => [
+    { Status:'CRIT', ServerName:'rs-analytics', TableName:'public.fact_sales_2019_bak', SizeGB:1840.0, LastScanned:null, DaysSinceScan:null, MonitoredDays:34, EstMonthlyUSD:44.16 },
+    { Status:'CRIT', ServerName:'rs-analytics', TableName:'public.stg_events_old', SizeGB:310.0, LastScanned:new Date(Date.now()-75*864e5).toISOString().slice(0,19), DaysSinceScan:75, MonitoredDays:34, EstMonthlyUSD:7.44 },
+    { Status:'WARN', ServerName:'rs-analytics', TableName:'public.dim_promo_archive', SizeGB:42.0, LastScanned:new Date(Date.now()-38*864e5).toISOString().slice(0,19), DaysSinceScan:38, MonitoredDays:34, EstMonthlyUSD:1.01 },
+    { Status:'OK', ServerName:'rs-analytics', TableName:'public.fact_sales', SizeGB:2400.0, LastScanned:new Date(Date.now()-2*36e5).toISOString().slice(0,19), DaysSinceScan:0, MonitoredDays:34, EstMonthlyUSD:57.60 },
+  ],
+  '/api/spectrum': () => [
+    { ServerName:'rs-analytics', ExternalTable:'ext.clickstream_raw', QueryCount:412, TBScanned:0.6210, EstCostUSD:3.11 },
+    { ServerName:'rs-analytics', ExternalTable:'ext.weblogs_2026', QueryCount:38, TBScanned:0.2480, EstCostUSD:1.24 },
+    { ServerName:'rs-analytics', ExternalTable:'(unknown)', QueryCount:6, TBScanned:0.0310, EstCostUSD:0.16 },
+  ],
   '/api/tablehealth': () => [
     { Status:'CRIT', ServerName:'rs-analytics', TableName:'public.fact_sales', UnsortedPct:62.4, StatsOffPct:18.0, TableRows:4820000000 },
     { Status:'WARN', ServerName:'rs-analytics', TableName:'public.stg_events', UnsortedPct:35.1, StatsOffPct:44.9, TableRows:91000000 },

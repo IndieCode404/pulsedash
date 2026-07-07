@@ -60,6 +60,10 @@
       <div id="backupsTable" class="tablewrap"></div>
       <div class="panel-head sub"><h2>Agent Job Failures <span class="muted">— last 7 days</span></h2></div>
       <div id="jobsTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Failed Logins <span class="muted">— MSSQL error log + Redshift connection log, last 7 days</span></h2></div>
+      <div id="failedLoginsTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Login Inventory <span class="muted">— who is connected from where (MSSQL)</span></h2></div>
+      <div id="loginsTable" class="tablewrap"></div>
     </section>
 
     <section id="tab-activity" class="panel">
@@ -71,6 +75,8 @@
       <div id="waitsTable" class="tablewrap"></div>
       <div class="panel-head sub"><h2>Redshift Table Maintenance <span class="muted">— VACUUM / ANALYZE debt</span></h2></div>
       <div id="tableHealthTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Top Queries by CPU <span class="muted">— MSSQL, active in last 24h</span></h2></div>
+      <div id="topQueriesTable" class="tablewrap"></div>
     </section>
 
     <section id="tab-growth" class="panel">
@@ -89,6 +95,10 @@
       </div>
       <div id="costChart" class="card chartcard"></div>
       <div id="costTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Stale Tables <span class="muted">— storage paid for but not read (archive/drop candidates)</span></h2></div>
+      <div id="staleTablesTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Spectrum Scans by External Table <span class="muted">— last 24h @ ~$5/TB</span></h2></div>
+      <div id="spectrumTable" class="tablewrap"></div>
     </section>
 
     <section id="tab-alerts" class="panel">

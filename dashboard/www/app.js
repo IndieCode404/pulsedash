@@ -122,7 +122,23 @@ const fmtDt = v => v ? new Date(v + 'Z').toLocaleString() : 'NEVER';
 const ago = v => v == null ? '—' : v;
 
 async function loadHealth() {
-  const [backups, jobs] = await Promise.all([api('/api/backups'), api('/api/jobs')]);
+  const [backups, jobs, flogins, logins] = await Promise.all([
+    api('/api/backups'), api('/api/jobs'),
+    api('/api/failedlogins').catch(() => []), api('/api/logins').catch(() => [])]);
+  $('#failedLoginsTable').innerHTML = table(flogins, [
+    { h: 'Platform', k: 'Platform' },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'When',     k: 'EventTime', f: fmtDt },
+    { h: 'Detail',   k: 'Message' },
+  ]);
+  $('#loginsTable').innerHTML = table(logins, [
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Login',    k: 'LoginName' },
+    { h: 'Host',     k: 'HostName' },
+    { h: 'Program',  k: 'ProgramName' },
+    { h: 'Sessions', k: 'SessionCount', f: num },
+    { h: 'Last login', k: 'LastLogin', f: fmtDt },
+  ]);
   $('#backupsTable').innerHTML = table(backups, [
     { h: 'Status',   k: 'Status', f: pill },
     { h: 'Server',   k: 'ServerName' },
@@ -154,8 +170,19 @@ const VITAL_LABELS = {
 };
 
 async function loadActivity() {
-  const [vitals, act, waits, thl] = await Promise.all([
-    api('/api/vitals'), api('/api/activity'), api('/api/waits'), api('/api/tablehealth')]);
+  const [vitals, act, waits, thl, topq] = await Promise.all([
+    api('/api/vitals'), api('/api/activity'), api('/api/waits'), api('/api/tablehealth'),
+    api('/api/topqueries').catch(() => [])]);
+  $('#topQueriesTable').innerHTML = table(topq, [
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Database', k: 'DatabaseName' },
+    { h: 'Execs',    k: 'ExecCount', f: num },
+    { h: 'Total CPU',k: 'TotalCpuMs', f: v => v == null ? '—' : (v/1000).toFixed(1) + 's' },
+    { h: 'Avg CPU',  k: 'AvgCpuMs', f: v => v == null ? '—' : v + 'ms' },
+    { h: 'Avg dur',  k: 'AvgDurMs', f: v => v == null ? '—' : v + 'ms' },
+    { h: 'Avg reads',k: 'AvgReads', f: num },
+    { h: 'Query',    k: 'QueryText', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 70))}${(v||'').length > 70 ? '…' : ''}</span>` },
+  ]);
   $('#vitalsTable').innerHTML = table(vitals, [
     { h: 'Status',  k: 'Status', f: pill },
     { h: 'Platform',k: 'Platform' },
@@ -268,7 +295,25 @@ async function loadCost() {
     }
     await drawCostTrend();
   }
-  const rows = await api('/api/cost');
+  const [rows, stale, spectrum] = await Promise.all([
+    api('/api/cost'), api('/api/staletables').catch(() => []), api('/api/spectrum').catch(() => [])]);
+  $('#staleTablesTable').innerHTML = table(stale, [
+    { h: 'Status',  k: 'Status', f: pill },
+    { h: 'Cluster', k: 'ServerName' },
+    { h: 'Table',   k: 'TableName' },
+    { h: 'Size',    k: 'SizeGB', f: v => v + ' GB' },
+    { h: 'Last read', k: 'LastScanned', f: v => v ? new Date(v + 'Z').toLocaleDateString() : 'never seen' },
+    { h: 'Days idle', k: 'DaysSinceScan', f: v => v == null ? '∞' : v },
+    { h: 'Watched',  k: 'MonitoredDays', f: v => v + 'd' },
+    { h: 'Storage $/mo', k: 'EstMonthlyUSD', f: v => '$' + v },
+  ]);
+  $('#spectrumTable').innerHTML = table(spectrum, [
+    { h: 'Cluster',  k: 'ServerName' },
+    { h: 'External table', k: 'ExternalTable' },
+    { h: 'Queries 24h', k: 'QueryCount', f: num },
+    { h: 'TB scanned', k: 'TBScanned' },
+    { h: 'Est cost 24h', k: 'EstCostUSD', f: v => '$' + v },
+  ]);
   $('#costTable').innerHTML = table(rows, [
     { h: 'Severity', k: 'Severity', f: pill },
     { h: 'Cluster',  k: 'ServerName' },

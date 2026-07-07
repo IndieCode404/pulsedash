@@ -89,6 +89,40 @@ UNION ALL
 SELECT 'load_errors_24h', COUNT(*)::float, NULL
 FROM stl_load_errors WHERE starttime > DATEADD(day, -1, GETDATE());
 
+--==TABLE_SCAN==--
+-- When was each table last READ? STL only keeps a few days, but DBADash
+-- snapshots this every cycle so central history accumulates -> stale-table
+-- detection. Must return: TableName, LastScanned.
+SELECT
+    TRIM(ti."schema") || '.' || TRIM(ti."table") AS TableName,
+    MAX(s.endtime)                                AS LastScanned
+FROM stl_scan s
+JOIN svv_table_info ti ON ti.table_id = s.tbl
+WHERE s.userid > 1
+GROUP BY 1;
+
+--==SPECTRUM==--
+-- Spectrum usage by external table, last 24h (~$5/TB scanned).
+-- Must return: ExternalTable, QueryCount, TBScanned.
+SELECT
+    COALESCE(NULLIF(TRIM(external_table_name),''),'(unknown)') AS ExternalTable,
+    COUNT(DISTINCT query)                                       AS QueryCount,
+    SUM(s3_scanned_bytes)::float / 1e12                         AS TBScanned
+FROM svl_s3query_summary
+WHERE starttime > DATEADD(day, -1, GETDATE())
+GROUP BY 1
+ORDER BY 3 DESC
+LIMIT 50;
+
+--==RS_LOGINS==--
+-- Failed authentications, last 24h. Must return: EventTime, Message.
+SELECT
+    recordtime AS EventTime,
+    LEFT('Failed auth: user=' || TRIM(username) || ' from ' || TRIM(remotehost), 500) AS Message
+FROM stl_connection_log
+WHERE event = 'authentication failure'
+  AND recordtime > DATEADD(day, -1, GETDATE());
+
 --==COST==--
 -- Cost DRIVERS for anomaly detection. Each row = one metric for the last ~24h.
 -- Must return: MetricName, MetricValue, MetricUnit. EDIT to match your edition

@@ -148,6 +148,40 @@ WHERE wait_type NOT IN ('CLR_SEMAPHORE','LAZYWRITER_SLEEP','RESOURCE_QUEUE','SLE
 ORDER BY wait_time_ms DESC;
 "@
 
+$Q_TOPQ = @"
+SELECT TOP (10)
+       DatabaseName=DB_NAME(t.dbid), QueryText=LEFT(t.text,500),
+       ExecCount=qs.execution_count,
+       TotalCpuMs=qs.total_worker_time/1000,
+       AvgCpuMs=qs.total_worker_time/NULLIF(qs.execution_count,0)/1000,
+       AvgDurMs=qs.total_elapsed_time/NULLIF(qs.execution_count,0)/1000,
+       AvgReads=qs.total_logical_reads/NULLIF(qs.execution_count,0),
+       LastExec=qs.last_execution_time
+FROM sys.dm_exec_query_stats qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) t
+WHERE qs.last_execution_time > DATEADD(DAY,-1,GETDATE())
+ORDER BY qs.total_worker_time DESC;
+"@
+
+# Failed logins from the error log (needs securityadmin; degrades to 0 rows without it)
+$Q_FAILEDLOGIN = @"
+DECLARE @log TABLE (LogDate datetime, ProcessInfo nvarchar(50), LogText nvarchar(3999));
+BEGIN TRY
+    INSERT @log EXEC master.dbo.xp_readerrorlog 0, 1, N'Login failed';
+    INSERT @log EXEC master.dbo.xp_readerrorlog 1, 1, N'Login failed';
+END TRY BEGIN CATCH END CATCH;
+SELECT EventTime=CONVERT(datetime2(0), LogDate), Message=LEFT(LogText,500)
+FROM @log WHERE LogDate > DATEADD(HOUR,-24,GETDATE());
+"@
+
+$Q_LOGINACT = @"
+SELECT LoginName=login_name, HostName=host_name, ProgramName=LEFT(program_name,160),
+       SessionCount=COUNT(*), LastLogin=MAX(login_time)
+FROM sys.dm_exec_sessions
+WHERE is_user_process=1
+GROUP BY login_name, host_name, LEFT(program_name,160);
+"@
+
 # ---- Resolve MSSQL targets from THREE sources ----------------------------
 #  1. CMS registered-server group          (Windows auth)
 #  2. config cms.mssqlInstances            (string = Windows auth,
@@ -213,6 +247,15 @@ foreach ($inst in @($targets.Keys)) {
 
         $wt  = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_WAITS) -ServerName $inst -CollectedAt $now
         $n9  = Write-BulkTable -ConnString $centralConn -Table $wt -Destination 'mon.WaitStats'
+
+        $tq  = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_TOPQ) -ServerName $inst -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $tq -Destination 'mon.TopQueries')
+
+        $fl  = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_FAILEDLOGIN) -ServerName $inst -Platform 'MSSQL' -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $fl -Destination 'mon.FailedLogin')
+
+        $la  = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_LOGINACT) -ServerName $inst -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $la -Destination 'mon.LoginActivity')
 
         Write-CollectionLog -CentralConn $centralConn -Collector 'MSSQL' -ServerName $inst -Status 'OK' `
             -RowsLoaded ($n1+$n2+$n3+$n4+$n5+$n6+$n7+$n8+$n9) `
