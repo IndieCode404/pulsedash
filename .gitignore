@@ -1,0 +1,8 @@
+# Local config contains instance names / credentials - NEVER commit it.
+deploy/config/dbadash.json
+
+# OS / editor noise
+Thumbs.db
+Desktop.ini
+*.swp
+.vscode/

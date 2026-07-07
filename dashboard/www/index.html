@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DBADash — MSSQL &amp; Redshift Monitor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▣</span>
+      <div>
+        <h1>DBADash</h1>
+        <span class="tag">MSSQL &amp; Redshift · one-stop health desk</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span id="lastRun" class="muted">—</span>
+      <label class="auto"><input type="checkbox" id="autoRefresh" checked /> auto-refresh 30s</label>
+      <button id="refreshBtn" class="btn">↻ Refresh</button>
+    </div>
+  </header>
+
+  <!-- KPI strip -->
+  <section id="kpis" class="kpis"></section>
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="ag">AG Sync</button>
+    <button class="tab" data-tab="lag">Data Lag</button>
+    <button class="tab" data-tab="health">Health</button>
+    <button class="tab" data-tab="activity">Activity</button>
+    <button class="tab" data-tab="disk">Disk Forecast</button>
+    <button class="tab" data-tab="growth">Growth</button>
+    <button class="tab" data-tab="cost">Cost Anomaly</button>
+    <button class="tab" data-tab="alerts">Alerts</button>
+    <button class="tab" data-tab="owners">App Owners</button>
+  </nav>
+
+  <main>
+    <section id="tab-ag" class="panel active">
+      <div class="panel-head"><h2>Always On — AG Sync Status</h2></div>
+      <div id="agTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-lag" class="panel">
+      <div class="panel-head"><h2>Data Lag <span class="muted">— AG redo lag &amp; Redshift load freshness</span></h2></div>
+      <div id="lagTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-disk" class="panel">
+      <div class="panel-head"><h2>Disk Expansion Forecast</h2></div>
+      <div id="diskTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-health" class="panel">
+      <div class="panel-head"><h2>Backup &amp; Integrity Health <span class="muted">— full/log RPO + last good CHECKDB</span></h2></div>
+      <div id="backupsTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Agent Job Failures <span class="muted">— last 7 days</span></h2></div>
+      <div id="jobsTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-activity" class="panel">
+      <div class="panel-head"><h2>Instance Vitals</h2></div>
+      <div id="vitalsTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Blocking &amp; Long-Running Queries</h2></div>
+      <div id="activityTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Top Waits <span class="muted">— since instance restart</span></h2></div>
+      <div id="waitsTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Redshift Table Maintenance <span class="muted">— VACUUM / ANALYZE debt</span></h2></div>
+      <div id="tableHealthTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-growth" class="panel">
+      <div class="panel-head">
+        <h2>Database &amp; Table Growth</h2>
+        <select id="growthKey" class="select"></select>
+      </div>
+      <div id="growthChart" class="card chartcard"></div>
+      <div id="growthTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-cost" class="panel">
+      <div class="panel-head">
+        <h2>Redshift Cost <span class="muted">— usage spikes vs. baseline</span></h2>
+        <select id="costKey" class="select"></select>
+      </div>
+      <div id="costChart" class="card chartcard"></div>
+      <div id="costTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-alerts" class="panel">
+      <div class="panel-head"><h2>Active Alerts</h2></div>
+      <div id="alertsTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-owners" class="panel">
+      <div class="panel-head">
+        <h2>Application Owners</h2>
+        <button id="newOwnerBtn" class="btn primary">+ New / Edit owner</button>
+      </div>
+
+      <div id="ownerForm" class="card form hidden">
+        <div class="grid">
+          <label>Server / Cluster<input id="f_ServerName" required /></label>
+          <label>Database <span class="muted">(or (instance))</span><input id="f_DatabaseName" placeholder="(instance)" /></label>
+          <label>Application<input id="f_AppName" required /></label>
+          <label>Criticality
+            <select id="f_Criticality">
+              <option>Tier1</option><option>Tier2</option><option selected>Tier3</option>
+            </select>
+          </label>
+          <label>Primary owner<input id="f_PrimaryOwner" /></label>
+          <label>Secondary owner<input id="f_SecondaryOwner" /></label>
+          <label>Team<input id="f_Team" /></label>
+          <label>Email<input id="f_Email" type="email" /></label>
+          <label>On-call phone<input id="f_OnCallPhone" /></label>
+          <label class="wide">Notes<input id="f_Notes" /></label>
+        </div>
+        <input type="hidden" id="f_AppOwnerID" value="0" />
+        <div class="form-actions">
+          <button id="saveOwnerBtn" class="btn primary">Save</button>
+          <button id="cancelOwnerBtn" class="btn">Cancel</button>
+          <span id="formMsg" class="muted"></span>
+        </div>
+      </div>
+
+      <div id="ownersTable" class="tablewrap"></div>
+    </section>
+  </main>
+
+  <footer class="foot muted">DBADash · reads DBADash.rpt.* views · no external dependencies</footer>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+{
+  "central": {
+    "//": "Where the DBADash database lives. All collectors load here.",
+    "sqlInstance": "SQLMON01",
+    "database": "DBADash",
+    "//auth": "Leave user/password empty to use Windows/Integrated auth.",
+    "user": "",
+    "password": ""
+  },
+
+  "cms": {
+    "//": "Central Management Server + the registered-server group to fan out to.",
+    "//alt": "If you don't use CMS, set 'group' to null and list instances in mssqlInstances instead.",
+    "cmsInstance": "SQLMON01",
+    "group": "PROD-SQL",
+    "mssqlInstances": []
+  },
+
+  "redshift": [
+    {
+      "clusterId": "rs-analytics",
+      "environment": "PROD",
+      "host": "rs-analytics.abc123.us-east-1.redshift.amazonaws.com",
+      "port": 5439,
+      "database": "analytics",
+      "user": "dbadash_ro",
+      "//password": "Prefer the DBADASH_RS_PWD env var over storing it here.",
+      "password": "",
+      "//dsn": "Optional: name of a preconfigured ODBC DSN. If set, host/port/etc are ignored.",
+      "dsn": ""
+    }
+  ],
+
+  "alerting": {
+    "//": "Email active CRIT/WARN alerts. transport = 'smtp' or 'dbmail'.",
+    "enabled": false,
+    "transport": "smtp",
+    "recipients": ["dba-team@corp.com"],
+    "//routeToOwners": "Also email the app owner's address from cfg.AppOwners.",
+    "routeToOwners": true,
+    "//dbmailProfile": "Database Mail profile name (only used when transport='dbmail').",
+    "dbmailProfile": "DBADash",
+    "smtp": {
+      "host": "smtp.corp.com",
+      "port": 25,
+      "from": "dbadash@corp.com",
+      "useSsl": false
+    }
+  },
+
+  "retentionDays": 90
+}
