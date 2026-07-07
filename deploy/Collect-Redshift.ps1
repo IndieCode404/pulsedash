@@ -45,7 +45,27 @@ function Get-RedshiftOdbcConnString($rs) {
     return "Driver={$driver};Server=$($rs.host);Port=$($rs.port);Database=$($rs.database);Uid=$($rs.user);Pwd=$pwd;SSLMode=require;"
 }
 
-foreach ($rs in $cfg.redshift) {
+# Merge cluster list: config file + clusters saved via the dashboard "Servers"
+# form (Platform=Redshift with a Host). Config wins on clusterId collisions.
+$clusters = @() + @($cfg.redshift | Where-Object { $_ })
+try {
+    $uiRs = Invoke-SqlQuery -ConnString $centralConn -Query `
+        "SELECT ServerName, Host, Port, DatabaseName, UserName, PasswordEnc
+         FROM cfg.Servers WHERE IsActive = 1 AND Platform = 'Redshift' AND Host IS NOT NULL;"
+    foreach ($r in $uiRs.Rows) {
+        $id = [string]$r['ServerName']
+        if ($clusters | Where-Object { $_.clusterId -eq $id }) { continue }
+        $blob = if ($r['PasswordEnc'] -is [DBNull]) { $null } else { [byte[]]$r['PasswordEnc'] }
+        $clusters += [pscustomobject]@{
+            clusterId = $id; environment = 'PROD'
+            host = [string]$r['Host']; port = [int]$r['Port']
+            database = [string]$r['DatabaseName']; user = [string]$r['UserName']
+            password = (Unprotect-DbaDashSecret $blob); dsn = ''
+        }
+    }
+} catch { Write-Warning "could not read cfg.Servers Redshift rows: $($_.Exception.Message)" }
+
+foreach ($rs in $clusters) {
     $now  = [datetime]::UtcNow
     $conn = Get-RedshiftOdbcConnString $rs
     try {

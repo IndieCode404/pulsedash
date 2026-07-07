@@ -6,6 +6,26 @@
 #>
 
 Add-Type -AssemblyName System.Data | Out-Null
+Add-Type -AssemblyName System.Security | Out-Null
+
+# DPAPI (LocalMachine scope): encrypt/decrypt secrets so they are only usable on
+# THIS box. The dashboard encrypts before storing in cfg.Servers.PasswordEnc;
+# the collector (same machine) decrypts. Plaintext never reaches the database.
+function Protect-DbaDashSecret {
+    param([string]$PlainText)
+    if ([string]::IsNullOrEmpty($PlainText)) { return $null }
+    return [System.Security.Cryptography.ProtectedData]::Protect(
+        [Text.Encoding]::UTF8.GetBytes($PlainText), $null,
+        [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+}
+function Unprotect-DbaDashSecret {
+    param([byte[]]$Blob)
+    if (-not $Blob -or $Blob.Length -eq 0) { return '' }
+    return [Text.Encoding]::UTF8.GetString(
+        [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $Blob, $null,
+            [System.Security.Cryptography.DataProtectionScope]::LocalMachine))
+}
 
 function Get-DbaDashConfig {
     param([string]$Path = "$PSScriptRoot\config\dbadash.json")

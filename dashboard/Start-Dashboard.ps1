@@ -25,6 +25,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Data | Out-Null
+. "$PSScriptRoot\..\deploy\Common.ps1"   # DPAPI secret helpers + Get-SqlConnString
 
 # Resolve connection: explicit -Instance wins, else read the collector config.
 if (-not $Instance -and (Test-Path $ConfigPath)) {
@@ -120,8 +121,43 @@ function Upsert-Server($body) {
         $fn = if ([string]::IsNullOrEmpty([string]$body.FriendlyName)) { [DBNull]::Value } else { $body.FriendlyName }
         [void]$cmd.Parameters.AddWithValue('@FriendlyName', $fn)
         [void]$cmd.Parameters.AddWithValue('@IsActive', $(if($null -ne $body.IsActive -and -not $body.IsActive){0}else{1}))
+        foreach ($p in @{ '@Host'=$body.Host; '@DatabaseName'=$body.DatabaseName; '@UserName'=$body.UserName }.GetEnumerator()) {
+            $v = if ([string]::IsNullOrEmpty([string]$p.Value)) { [DBNull]::Value } else { [string]$p.Value }
+            [void]$cmd.Parameters.AddWithValue($p.Key, $v)
+        }
+        [void]$cmd.Parameters.AddWithValue('@Port', $(if($body.Port){[int]$body.Port}else{[DBNull]::Value}))
+        [void]$cmd.Parameters.AddWithValue('@AuthType', $(if($body.AuthType -eq 'sql'){'sql'}else{'windows'}))
+        # Encrypt with DPAPI before it ever leaves this process. Blank = keep stored.
+        $pe = $cmd.Parameters.Add('@PasswordEnc', [System.Data.SqlDbType]::VarBinary, -1)
+        $blob = Protect-DbaDashSecret ([string]$body.Password)
+        $pe.Value = if ($blob) { $blob } else { [DBNull]::Value }
         [void]$cmd.ExecuteNonQuery()
     } finally { $c.Dispose() }
+}
+
+# DBeaver-style "Test Connection": try to reach the target with the form's
+# settings and report success or the driver's error message.
+function Test-ServerConnection($body) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        if ($body.Platform -eq 'Redshift') {
+            $pwd = [string]$body.Password
+            $cs = "Driver={Amazon Redshift ODBC Driver (x64)};Server=$($body.Host);Port=$($body.Port);Database=$($body.DatabaseName);Uid=$($body.UserName);Pwd=$pwd;SSLMode=require;"
+            $oc = New-Object System.Data.Odbc.OdbcConnection $cs
+            try { $oc.ConnectionTimeout = 10; $oc.Open() } finally { $oc.Dispose() }
+        } else {
+            $cs = if ($body.AuthType -eq 'sql') {
+                "Server=$($body.ServerName);Database=master;TrustServerCertificate=True;Connect Timeout=10;User ID=$($body.UserName);Password=$([string]$body.Password);"
+            } else {
+                "Server=$($body.ServerName);Database=master;TrustServerCertificate=True;Connect Timeout=10;Integrated Security=SSPI;"
+            }
+            $sc = New-Object System.Data.SqlClient.SqlConnection $cs
+            try { $sc.Open() } finally { $sc.Dispose() }
+        }
+        return @{ ok = $true; message = "Connected in $($sw.ElapsedMilliseconds) ms" }
+    } catch {
+        return @{ ok = $false; message = $_.Exception.GetBaseException().Message }
+    }
 }
 
 function Delete-Server([int]$id) {
@@ -202,6 +238,10 @@ try {
                 '^POST /api/servers/delete$' {
                     $body = (New-Object IO.StreamReader($ctx.Request.InputStream)).ReadToEnd() | ConvertFrom-Json
                     Delete-Server ([int]$body.ServerID); Send-Json $ctx @{ ok = $true }; break
+                }
+                '^POST /api/servers/test$' {
+                    $body = (New-Object IO.StreamReader($ctx.Request.InputStream)).ReadToEnd() | ConvertFrom-Json
+                    Send-Json $ctx (Test-ServerConnection $body); break
                 }
                 '^POST /api/servers$' {
                     $body = (New-Object IO.StreamReader($ctx.Request.InputStream)).ReadToEnd() | ConvertFrom-Json

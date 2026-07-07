@@ -159,17 +159,29 @@
           <label>Active
             <select id="s_IsActive"><option value="1">Yes — collect</option><option value="0">No — paused</option></select>
           </label>
+          <label>Authentication
+            <select id="s_AuthType">
+              <option value="windows">Windows / Integrated</option>
+              <option value="sql">SQL login / DB user</option>
+            </select>
+          </label>
+          <label class="conn">Host <span class="muted">(Redshift endpoint)</span><input id="s_Host" placeholder="cluster.abc.region.redshift.amazonaws.com" /></label>
+          <label class="conn">Port<input id="s_Port" type="number" placeholder="5439" /></label>
+          <label class="conn">Database<input id="s_DatabaseName" placeholder="analytics" /></label>
+          <label class="cred">Username<input id="s_UserName" autocomplete="off" /></label>
+          <label class="cred">Password <span class="muted">(blank = keep saved)</span><input id="s_Password" type="password" autocomplete="new-password" /></label>
         </div>
         <div class="form-actions">
+          <button id="testServerBtn" class="btn">⚡ Test connection</button>
           <button id="saveServerBtn" class="btn primary">Save</button>
           <button id="cancelServerBtn" class="btn">Cancel</button>
           <span id="serverFormMsg" class="muted"></span>
         </div>
-        <p class="muted note">MSSQL servers added here are collected with <b>Windows/integrated auth</b> — no
-        connection string needed (the collector account must have VIEW SERVER STATE + msdb read on the target).
-        For SQL-auth targets use <code>cms.mssqlInstances</code> in <code>deploy\config\dbadash.json</code>;
-        Redshift clusters also need their host/port/credentials in the config's <code>redshift</code> block —
-        adding one here only registers it in inventory.</p>
+        <p class="muted note">Works like DBeaver: pick auth, fill in credentials, <b>Test connection</b>, Save.
+        <b>Windows auth</b> needs no credentials (collector account must have VIEW SERVER STATE + msdb read on the
+        target). <b>SQL login / Redshift</b> passwords are encrypted with Windows DPAPI (machine-scope) before
+        storage — plaintext never reaches the database and the blob is useless off this box. Host/Port/Database
+        apply to Redshift; MSSQL connects by server name.</p>
       </div>
 
       <div id="serversTable" class="tablewrap"></div>

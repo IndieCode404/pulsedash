@@ -206,10 +206,15 @@ foreach ($e in @($cfg.cms.mssqlInstances)) {
 }
 try {
     $uiSrv = Invoke-SqlQuery -ConnString $centralConn -Query `
-        "SELECT ServerName FROM cfg.Servers WHERE IsActive = 1 AND Platform = 'MSSQL';"
+        "SELECT ServerName, AuthType, UserName, PasswordEnc FROM cfg.Servers WHERE IsActive = 1 AND Platform = 'MSSQL';"
     foreach ($r in $uiSrv.Rows) {
         $n = [string]$r['ServerName']
-        if (-not $targets.ContainsKey($n)) { $targets[$n] = @{} }
+        if ($targets.ContainsKey($n)) { continue }
+        if ([string]$r['AuthType'] -eq 'sql' -and $r['UserName'] -isnot [DBNull]) {
+            # SQL login saved via the dashboard form; DPAPI-decrypt on this box
+            $blob = if ($r['PasswordEnc'] -is [DBNull]) { $null } else { [byte[]]$r['PasswordEnc'] }
+            $targets[$n] = @{ User = [string]$r['UserName']; Password = (Unprotect-DbaDashSecret $blob) }
+        } else { $targets[$n] = @{} }
     }
 } catch { Write-Warning "could not read cfg.Servers: $($_.Exception.Message)" }
 Write-Host "MSSQL targets: $($targets.Keys -join ', ')" -ForegroundColor Gray

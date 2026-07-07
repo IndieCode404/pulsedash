@@ -386,6 +386,9 @@ async function loadServers() {
     { h: 'Server',   k: 'ServerName' },
     { h: 'Platform', k: 'Platform' },
     { h: 'Env',      k: 'Environment' },
+    { h: 'Auth',     k: 'AuthType', f: (v, r) => v === 'sql'
+        ? `SQL login${r.UserName ? ' (' + esc(r.UserName) + ')' : ''}${r.HasPassword ? ' 🔒' : ''}`
+        : 'Windows' },
     { h: 'Friendly name', k: 'FriendlyName' },
     { h: 'Last collected', k: 'LastCollectedAt', f: v => v ? new Date(v + 'Z').toLocaleString() : 'never' },
     { h: 'Last status', k: 'LastStatus', f: (v, r) => v == null ? '—'
@@ -400,6 +403,31 @@ function showServerForm(show) { $('#serverForm').classList.toggle('hidden', !sho
 function clearServerForm() {
   $('#s_ServerName').value = ''; $('#s_Platform').value = 'MSSQL';
   $('#s_Environment').value = 'PROD'; $('#s_FriendlyName').value = ''; $('#s_IsActive').value = '1';
+  $('#s_AuthType').value = 'windows'; $('#s_Host').value = ''; $('#s_Port').value = '';
+  $('#s_DatabaseName').value = ''; $('#s_UserName').value = ''; $('#s_Password').value = '';
+  syncConnFields();
+}
+
+// DBeaver-style form behavior: Redshift => host/port/db + always DB-user auth;
+// MSSQL => connect by name, credentials only when SQL login is chosen.
+function syncConnFields() {
+  const rs = $('#s_Platform').value === 'Redshift';
+  if (rs) $('#s_AuthType').value = 'sql';
+  $('#s_AuthType').disabled = rs;
+  $$('#serverForm label.conn').forEach(l => l.style.display = rs ? '' : 'none');
+  const creds = rs || $('#s_AuthType').value === 'sql';
+  $$('#serverForm label.cred').forEach(l => l.style.display = creds ? '' : 'none');
+}
+
+function serverFormBody() {
+  return {
+    ServerName: $('#s_ServerName').value.trim(), Platform: $('#s_Platform').value,
+    Environment: $('#s_Environment').value, FriendlyName: $('#s_FriendlyName').value.trim(),
+    IsActive: $('#s_IsActive').value === '1', AuthType: $('#s_AuthType').value,
+    Host: $('#s_Host').value.trim(), Port: $('#s_Port').value.trim(),
+    DatabaseName: $('#s_DatabaseName').value.trim(),
+    UserName: $('#s_UserName').value.trim(), Password: $('#s_Password').value,
+  };
 }
 
 window.editServer = function (r) {
@@ -409,7 +437,22 @@ window.editServer = function (r) {
   $('#s_Environment').value = r.Environment || 'PROD';
   $('#s_FriendlyName').value = r.FriendlyName || '';
   $('#s_IsActive').value = r.IsActive ? '1' : '0';
+  $('#s_AuthType').value = r.AuthType || 'windows';
+  $('#s_Host').value = r.Host || ''; $('#s_Port').value = r.Port || '';
+  $('#s_DatabaseName').value = r.DatabaseName || '';
+  $('#s_UserName').value = r.UserName || ''; $('#s_Password').value = '';
+  syncConnFields();
 };
+
+async function testServer() {
+  const msg = $('#serverFormMsg');
+  msg.textContent = 'Testing…';
+  try {
+    const res = await api('/api/servers/test', { method: 'POST', body: JSON.stringify(serverFormBody()) });
+    msg.innerHTML = res.ok ? `<span style="color:var(--ok)">✔ ${esc(res.message)}</span>`
+                           : `<span style="color:var(--crit)">✘ ${esc(res.message)}</span>`;
+  } catch (e) { msg.textContent = 'Test failed: ' + e; }
+}
 
 window.delServer = async function (id) {
   if (!confirm('Remove this server from inventory? (History rows are kept until purge.)')) return;
@@ -418,12 +461,9 @@ window.delServer = async function (id) {
 };
 
 async function saveServer() {
-  const body = {
-    ServerName: $('#s_ServerName').value.trim(), Platform: $('#s_Platform').value,
-    Environment: $('#s_Environment').value, FriendlyName: $('#s_FriendlyName').value.trim(),
-    IsActive: $('#s_IsActive').value === '1',
-  };
+  const body = serverFormBody();
   if (!body.ServerName) { $('#serverFormMsg').textContent = 'Server name is required.'; return; }
+  if (body.Platform === 'Redshift' && !body.Host) { $('#serverFormMsg').textContent = 'Redshift needs a Host endpoint.'; return; }
   const res = await api('/api/servers', { method: 'POST', body: JSON.stringify(body) });
   if (res.error) { $('#serverFormMsg').textContent = 'Error: ' + res.error; return; }
   showServerForm(false); clearServerForm(); loadServers(); loadKpis();
@@ -471,6 +511,9 @@ $('#saveOwnerBtn').addEventListener('click', saveOwner);
 $('#newServerBtn').addEventListener('click', () => { clearServerForm(); showServerForm(true); });
 $('#cancelServerBtn').addEventListener('click', () => showServerForm(false));
 $('#saveServerBtn').addEventListener('click', saveServer);
+$('#testServerBtn').addEventListener('click', testServer);
+$('#s_Platform').addEventListener('change', syncConnFields);
+$('#s_AuthType').addEventListener('change', syncConnFields);
 
 let timer = null;
 function setAuto(on) { clearInterval(timer); if (on) timer = setInterval(refreshActive, 30000); }

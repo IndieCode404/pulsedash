@@ -19,7 +19,7 @@ let servers = [
   { ServerID:1, ServerName:'SQLPROD01\\AG', Platform:'MSSQL', Environment:'PROD', FriendlyName:'Sales AG Primary', IsActive:true, LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'OK', LastMessage:'AG=4 Disk=2 Lag=2' },
   { ServerID:2, ServerName:'SQLPROD02\\AG', Platform:'MSSQL', Environment:'PROD', FriendlyName:'Sales AG Secondary', IsActive:true, LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'OK', LastMessage:'AG=4 Disk=2' },
   { ServerID:3, ServerName:'SQLPROD03', Platform:'MSSQL', Environment:'PROD', FriendlyName:'Finance Standalone', IsActive:true, LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'ERROR', LastMessage:'Login timeout expired' },
-  { ServerID:4, ServerName:'rs-analytics', Platform:'Redshift', Environment:'PROD', FriendlyName:'Analytics Cluster', IsActive:true, LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'OK', LastMessage:'Disk=1 Fresh=8' },
+  { ServerID:4, ServerName:'rs-analytics', Platform:'Redshift', Environment:'PROD', FriendlyName:'Analytics Cluster', IsActive:true, AuthType:'sql', UserName:'dbadash_ro', HasPassword:true, Host:'rs-analytics.abc123.us-east-1.redshift.amazonaws.com', Port:5439, DatabaseName:'analytics', LastCollectedAt:new Date(Date.now()-9e5).toISOString().slice(0,19), LastStatus:'OK', LastMessage:'Disk=1 Fresh=8' },
   { ServerID:5, ServerName:'SQLUAT01', Platform:'MSSQL', Environment:'UAT', FriendlyName:'UAT box', IsActive:false, LastCollectedAt:null, LastStatus:null, LastMessage:null },
 ];
 
@@ -147,6 +147,15 @@ http.createServer(async (req,res)=>{
     if(o.AppOwnerID) owners=owners.map(x=>x.AppOwnerID===o.AppOwnerID?{...x,...o}:x);
     else { o.AppOwnerID=Math.max(0,...owners.map(x=>x.AppOwnerID))+1; owners.push(o); }
     res.setHeader('Content-Type','application/json'); return res.end('{"ok":true}');
+  }
+  if (req.method==='POST' && url==='/api/servers/test') {
+    const o = JSON.parse(await body(req));
+    await new Promise(r=>setTimeout(r,600));   // simulate driver handshake
+    const bad = (o.Host||'').includes('bad') || (o.ServerName||'').includes('bad');
+    res.setHeader('Content-Type','application/json');
+    return res.end(JSON.stringify(bad
+      ? { ok:false, message:'Login timeout expired / host unreachable' }
+      : { ok:true, message:'Connected in 412 ms' }));
   }
   if (req.method==='POST' && url==='/api/servers') {
     const o = JSON.parse(await body(req));

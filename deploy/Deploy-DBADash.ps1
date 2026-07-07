@@ -32,7 +32,8 @@ $scripts = @(
     '10_alerts.sql',
     '12_health.sql',
     '14_servers_admin.sql',
-    '15_perf_audit_cost.sql'
+    '15_perf_audit_cost.sql',
+    '16_connections.sql'
 )
 if ($WithDemoData) { $scripts += '07_seed_demo.sql','11_seed_growth_cost.sql','13_seed_health.sql' }
 
