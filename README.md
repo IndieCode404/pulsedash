@@ -19,6 +19,8 @@ It answers the questions clients actually ask on day one:
 9. **Who is on my server and who keeps failing to log in?** — failed-login audit (MSSQL error log + Redshift connection log) and a live session inventory showing host, app, login, and duration.
 10. **Am I paying for Redshift storage I never read?** — **stale table detection** (last-scan age vs. your threshold) with $/month reclaim estimate, plus a **Spectrum per-external-table cost** breakdown.
 11. **Why is this blocked, and how do I stop it recurring?** — an **Advisor** that doesn't just show a Redshift lock wait > 30 min but investigates it: classifies the root cause (idle-in-transaction / DDL behind a read / serialization conflicts / VACUUM) and prints a **fix now** + **prevent next time** for each, and raises a CRIT alert.
+12. **What patch am I on, and is the server configured sanely?** — **patch/build level** per instance (version, service pack, CU, edition, OS) plus a **configuration-drift** audit (MAXDOP, cost threshold, max memory, `sa`, sysadmin count, xp_cmdshell, backup compression…) flagged against best practice.
+13. **Who can do what?** — an **access-control** view: every login/group classified by the access it holds (Sysadmin / Security admin / Elevated / Standard / Connect-only / Disabled), with per-type counts and a full principal list. Plus **index health** (missing/unused indexes) and **tempdb / VLF** vitals.
 
 Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 
@@ -65,6 +67,7 @@ Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 | `sql\15_perf_audit_cost.sql` | Top queries by CPU, failed-login audit, session inventory, stale-table detection, Spectrum scans |
 | `sql\16_connections.sql` | Adds connection fields to `cfg.Servers`: Host, Port, DatabaseName, AuthType, UserName, PasswordEnc (DPAPI blob) |
 | `sql\17_advisor.sql` | Advisor / findings engine: `mon.LockWait`, `mon.Finding`, `cfg.usp_Generate_Findings` (Redshift long-block rules), `rpt.Findings`; extends alert eval + purge |
+| `sql\18_server_audit.sql` | Patch/build (`mon.ServerInfo`), config drift (`mon.ConfigAudit`), access control (`mon.SecurityPrincipal`), index health (`mon.IndexHealth`); tempdb/VLF vitals; Overview v4 |
 | `sql\07`, `sql\11`, `sql\13` | Optional demo seeds: core → growth/cost/alerts → health/activity |
 | `redshift\redshift_metrics.sql` | Redshift SQL blocks: DISK, FRESHNESS, TABLE_SIZE, TABLE_HEALTH, ACTIVITY, RS_VITALS, TABLE_SCAN, SPECTRUM, RS_LOGINS, COST |
 | `deploy\Deploy-DBADash.ps1` | Builds / upgrades the central database (runs numbered SQL scripts in order) |
@@ -74,7 +77,7 @@ Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 | `deploy\Common.ps1` | Shared helpers: config loader, SQL helpers, DPAPI encrypt/decrypt — no external module deps |
 | `deploy\config\dbadash.example.json` | Copy to `dbadash.json`, edit with your instance + cluster details |
 | `agent\Create-AgentJobs.sql` | Creates the **"DBADash - Collect"** SQL Agent job |
-| `dashboard\Start-Dashboard.ps1` + `www\` | Self-contained PowerShell HTTP server + HTML/CSS/JS dashboard (11 tabs) |
+| `dashboard\Start-Dashboard.ps1` + `www\` | Self-contained PowerShell HTTP server + HTML/CSS/JS dashboard (13 tabs, light/dark, client-brandable) |
 | `powerbi\`, `ssrs\` | Connect Power BI / SSRS to the same `rpt.*` views |
 | `docs\COST_ANOMALY.md` | Redshift cost-anomaly playbook: AWS-native vs. in-cluster approaches |
 
@@ -151,15 +154,18 @@ cd K:\DBA_Monitoring\DBADash\dashboard
 ```
 *(Prefer Power BI or SSRS? See `powerbi\` / `ssrs\` — same `rpt.*` views.)*
 
-The dashboard has **11 tabs**:
+The dashboard has **13 tabs** (with a **light/dark toggle** ☀/☾ in the top bar,
+remembered per browser):
 
 | Tab | What you see |
 |-----|-------------|
 | **AG Sync** | AG name, primary/secondary, sync state, health per database |
 | **Data Lag** | AG redo lag (MSSQL) + ETL load freshness (Redshift) in seconds |
 | **Health** | Backup RPO, CHECKDB age, job failures (7 days), failed-login audit, session inventory |
-| **Activity** | Instance vitals, blocking/long-running queries, top waits, Redshift table maintenance, top 10 queries by CPU |
+| **Activity** | Instance vitals (incl. tempdb + VLF), blocking/long-running queries, top waits, Redshift table maintenance, top queries by CPU, **index health** |
 | **Advisor** | Findings that investigate blocking and prescribe a fix + prevention (see below) |
+| **Server & Config** | **Patch level** (build/SP/CU/edition/OS) per instance + **configuration drift** vs. best practice |
+| **Access Control** | Logins/groups by access type (Sysadmin/Elevated/…) with per-type counts + full principal list |
 | **Disk Forecast** | Days-to-full per volume + "buy N GB" sizing for 180-day headroom |
 | **Growth** | SVG trend chart (per DB or per Redshift table) + top-movers grid (GB/day) |
 | **Cost Anomaly** | Redshift cost-driver z-score vs. baseline, stale tables with $/month reclaim, Spectrum per-external-table cost |
@@ -249,6 +255,18 @@ alerts), render on the **Advisor** tab, and CRIT ones flow into the email pipeli
 as `Category = 'Advisor'`. Adding the next advisor (MSSQL blocking, index health,
 config drift) is just another rule appended inside the same proc.
 
+**Server audit** (`sql\18`) captures three standing-state checks each cycle:
+**patch level** from `SERVERPROPERTY` + `sys.dm_os_host_info` (build, service pack,
+`ProductUpdateLevel` = CU, edition, OS) → the *Server & Config* tab; **config drift**
+as a set of sp_Blitz-style checks (MAXDOP, cost threshold, max memory, `xp_cmdshell`,
+`sa` enabled/renamed, sysadmin count, backup compression, optimize-for-ad-hoc) each
+scored OK/WARN with a "why it matters"; and **access control** from
+`sys.server_principals` + role membership, classifying every login/group into
+Sysadmin / Security admin / Elevated / Standard / Connect-only / Disabled so you can
+answer *"how many people can do what"* at a glance. **Index health** reads the
+missing-index DMVs (ranked by impact) and **tempdb / VLF** ride along as extra
+`InstanceVitals` metrics with their own thresholds.
+
 **Alerts** (`cfg.usp_Evaluate_Alerts`) scans every `rpt.*` view, keeps one active
 row per problem in `mon.AlertHistory` (auto-resolving cleared conditions), and
 feeds the Alerts tab + email. **App owners** live in `cfg.AppOwners`; the
@@ -256,6 +274,35 @@ dashboard form calls `cfg.usp_AppOwner_Upsert`, and Power BI / SSRS read the sam
 table, so everything stays in sync.
 
 ---
+
+## Runs entirely on one box — nothing leaves the client
+
+Install everything on a single **Windows Server 2019** host and it does the whole
+job locally:
+
+- **What it needs on that box:** SQL Server (Express is fine) to host the `DBADash`
+  database, Windows PowerShell 5.1 (built in), and — only if you monitor Redshift —
+  an ODBC driver. No internet, no cloud service, no agent on the monitored targets.
+- **Where the data lives:** every metric and all history are stored in the `DBADash`
+  SQL database **on that server**. Stored target passwords are DPAPI-encrypted
+  (machine scope) and are useless off the box; the dashboard exposes only a
+  `HasPassword` bit. The web UI binds to `localhost`.
+- **What crosses the wire, and only inbound-to-you:** the collector reaches **out**
+  to each monitored SQL Server / Redshift instance to **read** metrics (read-only),
+  and — *only if you enable it* — sends alert emails via your SMTP/Database Mail.
+  There is **no telemetry and no external call** otherwise; nothing about your
+  estate is sent to Anthropic, GitHub, or any third party.
+
+So yes: on a fresh Windows Server 2019 it performs every task above, and the data
+stays on that server. (The only network requirement is that the box can reach the
+servers you want it to monitor.)
+
+## Branding & theme
+
+- **Theme:** the ☀/☾ button toggles light/dark; the choice is remembered per browser.
+- **Client logo / name:** edit `dashboard\www\branding.json` — set `productName`,
+  `tagline`, and `logoUrl` (drop e.g. `logo.png` into `www\` and point `logoUrl` at
+  it). The logo replaces the ▣ mark and `productName` sets the browser tab title.
 
 ## Security notes
 - Grant the collector a **dedicated login with least privilege**: VIEW SERVER STATE

@@ -1,0 +1,6 @@
+{
+  "_comment": "Client branding. Set logoUrl to a file you drop in this www folder (e.g. 'logo.png') to replace the ▣ mark. Leave blank to keep the default. productName also sets the browser tab title.",
+  "productName": "DBADash",
+  "tagline": "MSSQL & Redshift · one-stop health desk",
+  "logoUrl": ""
+}

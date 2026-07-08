@@ -117,7 +117,24 @@ UNION ALL
 -- cumulative since restart (trend it; a jump between collections = new deadlocks)
 SELECT 'deadlocks_total',
        (SELECT CAST(cntr_value AS float) FROM sys.dm_os_performance_counters
-        WHERE counter_name='Number of Deadlocks/sec' AND instance_name='_Total'), NULL;
+        WHERE counter_name='Number of Deadlocks/sec' AND instance_name='_Total'), NULL
+UNION ALL
+-- tempdb allocated size (GB) - the "why is tempdb huge" early warning
+SELECT 'tempdb_used_gb',
+       (SELECT CAST(SUM(user_object_reserved_page_count + internal_object_reserved_page_count
+                       + version_store_reserved_page_count + mixed_extent_page_count) * 8 / 1048576.0 AS float)
+        FROM tempdb.sys.dm_db_file_space_usage), NULL
+UNION ALL
+-- tempdb version store (GB) - long-open transactions / snapshot isolation bloat
+SELECT 'tempdb_version_store_gb',
+       (SELECT CAST(SUM(version_store_reserved_page_count) * 8 / 1048576.0 AS float)
+        FROM tempdb.sys.dm_db_file_space_usage), NULL
+UNION ALL
+-- worst VLF count across databases (needs SQL 2016 SP2+/2017+); >1000 slows log ops
+SELECT 'max_vlf_count',
+       (SELECT ISNULL(MAX(cnt),0) FROM
+          (SELECT CAST(COUNT(*) AS float) cnt FROM sys.databases d
+           CROSS APPLY sys.dm_db_log_info(d.database_id) GROUP BY d.database_id) z), NULL;
 "@
 
 $Q_ACTIVITY = @"
@@ -180,6 +197,120 @@ SELECT LoginName=login_name, HostName=host_name, ProgramName=LEFT(program_name,1
 FROM sys.dm_exec_sessions
 WHERE is_user_process=1
 GROUP BY login_name, host_name, LEFT(program_name,160);
+"@
+
+# Patch / build / version - "what SP + CU am I on" (SERVERPROPERTY + host info)
+$Q_SERVERINFO = @"
+SELECT
+    ProductVersion     = CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(50)),
+    ProductLevel       = CAST(SERVERPROPERTY('ProductLevel') AS nvarchar(20)),
+    ProductUpdateLevel = CAST(SERVERPROPERTY('ProductUpdateLevel') AS nvarchar(20)),
+    Edition            = CAST(SERVERPROPERTY('Edition') AS nvarchar(80)),
+    ProductMajor       = CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(40)),
+    HostPlatform       = (SELECT TOP (1) host_platform FROM sys.dm_os_host_info),
+    OSVersion          = (SELECT TOP (1) LEFT(host_distribution + ' ' + host_release, 120) FROM sys.dm_os_host_info),
+    IsClustered        = CAST(SERVERPROPERTY('IsClustered') AS bit),
+    IsHadrEnabled      = CAST(SERVERPROPERTY('IsHadrEnabled') AS bit),
+    StartTime          = (SELECT sqlserver_start_time FROM sys.dm_os_sys_info),
+    CpuCount           = (SELECT cpu_count FROM sys.dm_os_sys_info),
+    PhysicalMemoryMB   = (SELECT physical_memory_kb/1024 FROM sys.dm_os_sys_info);
+"@
+
+# Configuration drift - the sp_Blitz "Configuration" category, one row per check.
+$Q_CONFIG = @"
+;WITH c AS (SELECT name, CAST(value_in_use AS bigint) v FROM sys.configurations),
+      si AS (SELECT cpu_count FROM sys.dm_os_sys_info),
+      sa AS (SELECT name, is_disabled FROM sys.server_principals WHERE sid = 0x01)
+SELECT ConfigItem, CurrentValue, RecommendedValue, Status, Detail FROM (
+    SELECT 'max degree of parallelism' ConfigItem,
+           CAST((SELECT v FROM c WHERE name='max degree of parallelism') AS nvarchar(100)) CurrentValue,
+           '4-8 (not 0 on >8 cores)' RecommendedValue,
+           CASE WHEN (SELECT v FROM c WHERE name='max degree of parallelism')=0
+                 AND (SELECT cpu_count FROM si) > 8 THEN 'WARN' ELSE 'OK' END Status,
+           'MAXDOP 0 lets a single query grab every core.' Detail
+    UNION ALL SELECT 'cost threshold for parallelism',
+           CAST((SELECT v FROM c WHERE name='cost threshold for parallelism') AS nvarchar(100)), '>= 50',
+           CASE WHEN (SELECT v FROM c WHERE name='cost threshold for parallelism') <= 5 THEN 'WARN' ELSE 'OK' END,
+           'Default 5 sends even trivial queries parallel.'
+    UNION ALL SELECT 'max server memory (MB)',
+           CAST((SELECT v FROM c WHERE name='max server memory (MB)') AS nvarchar(100)), 'below physical RAM',
+           CASE WHEN (SELECT v FROM c WHERE name='max server memory (MB)') >= 2147483647 THEN 'WARN' ELSE 'OK' END,
+           'Unlimited lets SQL Server starve the OS.'
+    UNION ALL SELECT 'xp_cmdshell',
+           CAST((SELECT v FROM c WHERE name='xp_cmdshell') AS nvarchar(100)), '0 (off)',
+           CASE WHEN (SELECT v FROM c WHERE name='xp_cmdshell') = 1 THEN 'WARN' ELSE 'OK' END,
+           'Shell-command surface; leave off unless required.'
+    UNION ALL SELECT 'optimize for ad hoc workloads',
+           CAST((SELECT v FROM c WHERE name='optimize for ad hoc workloads') AS nvarchar(100)), '1 (on)',
+           CASE WHEN (SELECT v FROM c WHERE name='optimize for ad hoc workloads') = 0 THEN 'WARN' ELSE 'OK' END,
+           'Off = single-use plans bloat the plan cache.'
+    UNION ALL SELECT 'backup compression default',
+           CAST((SELECT v FROM c WHERE name='backup compression default') AS nvarchar(100)), '1 (on)',
+           CASE WHEN (SELECT v FROM c WHERE name='backup compression default') = 0 THEN 'WARN' ELSE 'OK' END,
+           'On = smaller, faster backups.'
+    UNION ALL SELECT 'sa login',
+           CASE WHEN (SELECT is_disabled FROM sa)=1 THEN 'disabled' ELSE 'ENABLED' END
+             + CASE WHEN (SELECT name FROM sa)='sa' THEN ', name=sa' ELSE ', renamed' END,
+           'disabled or renamed',
+           CASE WHEN (SELECT is_disabled FROM sa)=0 AND (SELECT name FROM sa)='sa' THEN 'WARN' ELSE 'OK' END,
+           'The well-known sa account is a brute-force target.'
+    UNION ALL SELECT 'sysadmin members',
+           CAST((SELECT COUNT(*) FROM sys.server_role_members m
+                 JOIN sys.server_principals r ON r.principal_id=m.role_principal_id
+                 WHERE r.name='sysadmin') AS nvarchar(100)), '<= 5',
+           CASE WHEN (SELECT COUNT(*) FROM sys.server_role_members m
+                      JOIN sys.server_principals r ON r.principal_id=m.role_principal_id
+                      WHERE r.name='sysadmin') > 5 THEN 'WARN' ELSE 'OK' END,
+           'Every sysadmin can do anything; keep the list short.'
+) x;
+"@
+
+# Access control - logins/groups classified by the access they hold.
+$Q_PRINCIPALS = @"
+;WITH rm AS (
+    SELECT m.member_principal_id, RoleName = r.name
+    FROM sys.server_role_members m
+    JOIN sys.server_principals r ON r.principal_id = m.role_principal_id
+)
+SELECT
+    PrincipalName = sp.name,
+    PrincipalType = sp.type_desc,
+    IsDisabled    = sp.is_disabled,
+    CreateDate    = CAST(sp.create_date AS datetime2(0)),
+    LastModified  = CAST(sp.modify_date AS datetime2(0)),
+    ServerRoles   = STUFF((SELECT ',' + RoleName FROM rm WHERE rm.member_principal_id = sp.principal_id
+                           FOR XML PATH('')), 1, 1, ''),
+    AccessType = CASE
+        WHEN sp.is_disabled = 1 THEN 'Disabled'
+        WHEN EXISTS (SELECT 1 FROM rm WHERE rm.member_principal_id=sp.principal_id AND rm.RoleName='sysadmin') THEN 'Sysadmin'
+        WHEN EXISTS (SELECT 1 FROM rm WHERE rm.member_principal_id=sp.principal_id AND rm.RoleName='securityadmin') THEN 'Security admin'
+        WHEN EXISTS (SELECT 1 FROM rm WHERE rm.member_principal_id=sp.principal_id
+                     AND rm.RoleName IN ('serveradmin','processadmin','setupadmin')) THEN 'Elevated'
+        WHEN EXISTS (SELECT 1 FROM rm WHERE rm.member_principal_id=sp.principal_id
+                     AND rm.RoleName IN ('dbcreator','bulkadmin','diskadmin')) THEN 'Standard'
+        ELSE 'Connect-only' END
+FROM sys.server_principals sp
+WHERE sp.type IN ('S','U','G')       -- SQL login / Windows login / Windows group
+  AND sp.name NOT LIKE '##%';        -- skip internal certificate principals
+"@
+
+# Index health - missing indexes + never-used indexes (both cheap DMV reads).
+$Q_INDEX = @"
+SELECT TOP (25)
+    DatabaseName = DB_NAME(mid.database_id),
+    Kind         = 'missing',
+    ObjectName   = mid.statement,
+    IndexName    = CAST(NULL AS nvarchar(256)),
+    Metric       = CONCAT('impact ', CAST(migs.avg_total_user_cost * migs.avg_user_impact * (migs.user_seeks + migs.user_scans) AS bigint),
+                          ' · seeks ', migs.user_seeks),
+    Recommendation = LEFT(CONCAT('CREATE INDEX IX_ ON ', mid.statement, ' (',
+                          ISNULL(mid.equality_columns,''),
+                          CASE WHEN mid.inequality_columns IS NOT NULL THEN ',' + mid.inequality_columns ELSE '' END, ')',
+                          CASE WHEN mid.included_columns IS NOT NULL THEN ' INCLUDE (' + mid.included_columns + ')' ELSE '' END), 600)
+FROM sys.dm_db_missing_index_groups mig
+JOIN sys.dm_db_missing_index_group_stats migs ON migs.group_handle = mig.index_group_handle
+JOIN sys.dm_db_missing_index_details  mid  ON mid.index_handle = mig.index_handle
+ORDER BY migs.avg_total_user_cost * migs.avg_user_impact * (migs.user_seeks + migs.user_scans) DESC;
 "@
 
 # ---- Resolve MSSQL targets from THREE sources ----------------------------
@@ -261,6 +392,19 @@ foreach ($inst in @($targets.Keys)) {
 
         $la  = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_LOGINACT) -ServerName $inst -CollectedAt $now
         [void](Write-BulkTable -ConnString $centralConn -Table $la -Destination 'mon.LoginActivity')
+
+        # server audit: patch/build, config drift, access control, index health
+        $sinfo = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_SERVERINFO) -ServerName $inst -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $sinfo -Destination 'mon.ServerInfo')
+
+        $ccfg = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_CONFIG) -ServerName $inst -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $ccfg -Destination 'mon.ConfigAudit')
+
+        $prin = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_PRINCIPALS) -ServerName $inst -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $prin -Destination 'mon.SecurityPrincipal')
+
+        $idx = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_INDEX) -ServerName $inst -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $idx -Destination 'mon.IndexHealth')
 
         Write-CollectionLog -CentralConn $centralConn -Collector 'MSSQL' -ServerName $inst -Status 'OK' `
             -RowsLoaded ($n1+$n2+$n3+$n4+$n5+$n6+$n7+$n8+$n9) `

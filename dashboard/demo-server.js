@@ -7,7 +7,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const WWW = path.join(__dirname, 'www');
-const TYPES = { '.html':'text/html', '.css':'text/css', '.js':'application/javascript' };
+const TYPES = { '.html':'text/html', '.css':'text/css', '.js':'application/javascript', '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.gif':'image/gif', '.svg':'image/svg+xml' };
 
 let owners = [
   { AppOwnerID:1, ServerName:'SQLPROD01\\AG', DatabaseName:'SalesDB', AppName:'Sales Order Portal', Criticality:'Tier1', PrimaryOwner:'Priya Nair', SecondaryOwner:'Sam Cole', Team:'Commerce Platform', Email:'commerce-oncall@corp.com', OnCallPhone:'+1-555-0101', Notes:'PCI in scope' },
@@ -25,7 +25,37 @@ let servers = [
 
 const DATA = {
   '/api/servers': () => [...servers].sort((a,b)=>(b.IsActive-a.IsActive)||a.ServerName.localeCompare(b.ServerName)),
-  '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, OpenFindings:2, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
+  '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, OpenFindings:2, ConfigWarnings:3, Sysadmins:7, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
+  '/api/serverinfo': () => [
+    { ServerName:'SQLPROD01\\AG', ProductMajor:'15', ProductVersion:'15.0.4360.2', ProductLevel:'RTM', ProductUpdateLevel:'CU18', PatchLevel:'v15.0.4360.2 · RTM-CU18', Edition:'Enterprise Edition (64-bit)', OSVersion:'Windows Server 2019 10.0', CpuCount:16, PhysicalMemoryMB:262144, IsClustered:true, IsHadrEnabled:true, StartTime:new Date(Date.now()-40*864e5).toISOString().slice(0,19) },
+    { ServerName:'SQLPROD03', ProductMajor:'15', ProductVersion:'15.0.2000.5', ProductLevel:'RTM', ProductUpdateLevel:'', PatchLevel:'v15.0.2000.5 · RTM', Edition:'Standard Edition (64-bit)', OSVersion:'Windows Server 2019 10.0', CpuCount:8, PhysicalMemoryMB:65536, IsClustered:false, IsHadrEnabled:false, StartTime:new Date(Date.now()-12*864e5).toISOString().slice(0,19) },
+  ],
+  '/api/configaudit': () => [
+    { Status:'WARN', ServerName:'SQLPROD03', ConfigItem:'max degree of parallelism', CurrentValue:'0', RecommendedValue:'4-8 (not 0 on >8 cores)', Detail:'MAXDOP 0 lets a single query grab every core.' },
+    { Status:'WARN', ServerName:'SQLPROD03', ConfigItem:'cost threshold for parallelism', CurrentValue:'5', RecommendedValue:'>= 50', Detail:'Default 5 sends even trivial queries parallel.' },
+    { Status:'WARN', ServerName:'SQLPROD03', ConfigItem:'sa login', CurrentValue:'ENABLED, name=sa', RecommendedValue:'disabled or renamed', Detail:'The well-known sa account is a brute-force target.' },
+    { Status:'OK', ServerName:'SQLPROD01\\AG', ConfigItem:'max server memory (MB)', CurrentValue:'245760', RecommendedValue:'below physical RAM', Detail:'Unlimited lets SQL Server starve the OS.' },
+    { Status:'OK', ServerName:'SQLPROD01\\AG', ConfigItem:'backup compression default', CurrentValue:'1', RecommendedValue:'1 (on)', Detail:'On = smaller, faster backups.' },
+  ],
+  '/api/accesscontrol': () => [
+    { ServerName:'SQLPROD01\\AG', AccessType:'Sysadmin', Principals:4, Status:'OK' },
+    { ServerName:'SQLPROD01\\AG', AccessType:'Elevated', Principals:2, Status:'OK' },
+    { ServerName:'SQLPROD01\\AG', AccessType:'Connect-only', Principals:31, Status:'OK' },
+    { ServerName:'SQLPROD03', AccessType:'Sysadmin', Principals:7, Status:'WARN' },
+    { ServerName:'SQLPROD03', AccessType:'Connect-only', Principals:14, Status:'OK' },
+  ],
+  '/api/principals': () => [
+    { ServerName:'SQLPROD03', PrincipalName:'CORP\\DBA-Team', PrincipalType:'WINDOWS_GROUP', AccessType:'Sysadmin', ServerRoles:'sysadmin', IsDisabled:false, CreateDate:new Date(Date.now()-400*864e5).toISOString().slice(0,19) },
+    { ServerName:'SQLPROD03', PrincipalName:'sa', PrincipalType:'SQL_LOGIN', AccessType:'Sysadmin', ServerRoles:'sysadmin', IsDisabled:false, CreateDate:new Date(Date.now()-900*864e5).toISOString().slice(0,19) },
+    { ServerName:'SQLPROD03', PrincipalName:'CORP\\jdoe', PrincipalType:'WINDOWS_LOGIN', AccessType:'Security admin', ServerRoles:'securityadmin', IsDisabled:false, CreateDate:new Date(Date.now()-120*864e5).toISOString().slice(0,19) },
+    { ServerName:'SQLPROD03', PrincipalName:'app_finance', PrincipalType:'SQL_LOGIN', AccessType:'Connect-only', ServerRoles:null, IsDisabled:false, CreateDate:new Date(Date.now()-200*864e5).toISOString().slice(0,19) },
+    { ServerName:'SQLPROD03', PrincipalName:'old_contractor', PrincipalType:'SQL_LOGIN', AccessType:'Disabled', ServerRoles:null, IsDisabled:true, CreateDate:new Date(Date.now()-500*864e5).toISOString().slice(0,19) },
+  ],
+  '/api/indexhealth': () => [
+    { Status:'WARN', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', Kind:'missing', ObjectName:'[FinanceDB].[dbo].[GLEntries]', IndexName:null, Metric:'impact 8421900 · seeks 184200', Recommendation:'CREATE INDEX IX_ ON [FinanceDB].[dbo].[GLEntries] ([Period],[CostCenter]) INCLUDE ([Amount])' },
+    { Status:'WARN', ServerName:'SQLPROD01\\AG', DatabaseName:'SalesDB', Kind:'missing', ObjectName:'[SalesDB].[dbo].[Orders]', IndexName:null, Metric:'impact 210400 · seeks 96500', Recommendation:'CREATE INDEX IX_ ON [SalesDB].[dbo].[Orders] ([CustomerID]) INCLUDE ([OrderDate],[Total])' },
+    { Status:'OK', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', Kind:'unused', ObjectName:'[FinanceDB].[dbo].[GLEntries]', IndexName:'IX_GLEntries_Legacy', Metric:'reads 0 · writes 1.2M', Recommendation:'Consider dropping: 0 reads, heavy write cost since last restart.' },
+  ],
   '/api/findings': () => [
     { FindingID:1, Platform:'Redshift', Category:'Blocking', Severity:'CRIT', ServerName:'rs-analytics', AgeMinutes:47,
       Title:'Lock wait 47 min on public.fact_sales (PID 2841 blocked by PID 2790)',

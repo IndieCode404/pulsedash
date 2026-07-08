@@ -45,6 +45,8 @@ async function loadKpis() {
     { lbl: 'Job failures 24h', num: o.JobFailures24h, cls: o.JobFailures24h > 0 ? 'warn' : 'ok', tab: 'health' },
     { lbl: 'Blocked sessions', num: o.BlockedSessions, cls: o.BlockedSessions > 0 ? 'crit' : 'ok', tab: 'activity' },
     { lbl: 'Advisor findings', num: o.OpenFindings, cls: o.OpenFindings > 0 ? 'crit' : 'ok', tab: 'advisor' },
+    { lbl: 'Config warnings', num: o.ConfigWarnings, cls: o.ConfigWarnings > 0 ? 'warn' : 'ok', tab: 'config' },
+    { lbl: 'Sysadmins',      num: o.Sysadmins, cls: o.Sysadmins > 5 ? 'warn' : 'ok', tab: 'access' },
     { lbl: 'No owner',       num: o.AppsWithoutOwner, cls: o.AppsWithoutOwner > 0 ? 'warn' : 'ok', tab: 'owners' },
   ];
   $('#kpis').innerHTML = cards.map(c =>
@@ -168,12 +170,24 @@ const VITAL_LABELS = {
   user_sessions: 'User sessions', blocked_sessions: 'Blocked sessions', uptime_hours: 'Uptime (h)',
   queued_queries: 'Queued queries (WLM)', db_connections: 'Connections', load_errors_24h: 'Load errors (24h)',
   cpu_pct: 'CPU %', suspect_pages: 'Suspect pages (corruption!)', deadlocks_total: 'Deadlocks (since restart)',
+  tempdb_used_gb: 'TempDB used (GB)', tempdb_version_store_gb: 'TempDB version store (GB)',
+  max_vlf_count: 'Worst VLF count (any DB)',
 };
 
 async function loadActivity() {
-  const [vitals, act, waits, thl, topq] = await Promise.all([
+  const [vitals, act, waits, thl, topq, idx] = await Promise.all([
     api('/api/vitals'), api('/api/activity'), api('/api/waits'), api('/api/tablehealth'),
-    api('/api/topqueries').catch(() => [])]);
+    api('/api/topqueries').catch(() => []), api('/api/indexhealth').catch(() => [])]);
+  $('#indexHealthTable').innerHTML = table(idx, [
+    { h: 'Status',   k: 'Status', f: pill },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Database', k: 'DatabaseName' },
+    { h: 'Kind',     k: 'Kind' },
+    { h: 'Object',   k: 'ObjectName', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 50))}${(v||'').length > 50 ? '…' : ''}</span>` },
+    { h: 'Index',    k: 'IndexName', f: v => v || '—' },
+    { h: 'Metric',   k: 'Metric' },
+    { h: 'Recommendation', k: 'Recommendation', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 80))}${(v||'').length > 80 ? '…' : ''}</span>` },
+  ]);
   $('#topQueriesTable').innerHTML = table(topq, [
     { h: 'Server',   k: 'ServerName' },
     { h: 'Database', k: 'DatabaseName' },
@@ -243,6 +257,56 @@ async function loadAdvisor() {
         ${f.Evidence ? `<div class="fr"><span class="fl">Evidence</span><code>${esc(f.Evidence)}</code></div>` : ''}
       </div>
     </div>`).join('');
+}
+
+/* ---- server & config tab (patch level + configuration drift) ---- */
+async function loadConfig() {
+  const [info, cfg] = await Promise.all([
+    api('/api/serverinfo').catch(() => []), api('/api/configaudit').catch(() => [])]);
+  $('#serverInfoTable').innerHTML = table(info, [
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Version',  k: 'ProductMajor', f: (v, r) => v ? `SQL major ${esc(v)}` : (r.Edition || '—') },
+    { h: 'Patch level', k: 'PatchLevel', f: v => `<b>${esc(v)}</b>` },
+    { h: 'Edition',  k: 'Edition' },
+    { h: 'OS',       k: 'OSVersion' },
+    { h: 'Cores',    k: 'CpuCount', f: num },
+    { h: 'RAM (GB)', k: 'PhysicalMemoryMB', f: v => v == null ? '—' : Math.round(v / 1024) },
+    { h: 'Clustered',k: 'IsClustered', f: v => v ? 'yes' : 'no' },
+    { h: 'AG enabled', k: 'IsHadrEnabled', f: v => v ? 'yes' : 'no' },
+    { h: 'Up since', k: 'StartTime', f: fmtDt },
+  ]);
+  $('#configAuditTable').innerHTML = table(cfg, [
+    { h: 'Status',   k: 'Status', f: pill },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Setting',  k: 'ConfigItem' },
+    { h: 'Current',  k: 'CurrentValue', f: v => `<b>${esc(v)}</b>` },
+    { h: 'Recommended', k: 'RecommendedValue' },
+    { h: 'Why it matters', k: 'Detail' },
+  ]);
+}
+
+/* ---- access control tab (principals by access type) ---- */
+async function loadAccess() {
+  const [roll, principals] = await Promise.all([
+    api('/api/accesscontrol').catch(() => []), api('/api/principals').catch(() => [])]);
+  // rollup: a KPI-style card per access type (per server)
+  $('#accessRollup').innerHTML = roll.length ? roll.map(r => {
+    const cls = r.Status === 'WARN' ? 'warn' : r.AccessType === 'Sysadmin' ? 'crit' : '';
+    return `<div class="kpi ${cls}"><div class="num">${r.Principals}</div>
+       <div class="lbl">${esc(r.AccessType)}</div>
+       <div class="muted" style="font-size:11px;margin-top:2px">${esc(r.ServerName)}</div></div>`;
+  }).join('') : '<div class="empty">No principals collected yet.</div>';
+  $('#principalsTable').innerHTML = table(principals, [
+    { h: 'Access',   k: 'AccessType', f: v => {
+        const cls = v === 'Sysadmin' ? 'CRIT' : (v === 'Security admin' || v === 'Elevated') ? 'WARN' : 'OK';
+        return `<span class="pill ${cls}">${esc(v)}</span>`; } },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Principal',k: 'PrincipalName' },
+    { h: 'Type',     k: 'PrincipalType', f: v => (v || '').replace('_', ' ').toLowerCase() },
+    { h: 'Server roles', k: 'ServerRoles', f: v => v || '—' },
+    { h: 'Disabled', k: 'IsDisabled', f: v => v ? '<b>yes</b>' : 'no' },
+    { h: 'Created',  k: 'CreateDate', f: v => v ? new Date(v + 'Z').toLocaleDateString() : '—' },
+  ]);
 }
 
 /* ---- growth (SVG line chart, no chart library) ---- */
@@ -499,6 +563,7 @@ function refreshActive() {
   const t = $('.tab.active').dataset.tab;
   ({ ag: loadAg, lag: loadLag, disk: loadDisk, growth: loadGrowth,
      health: loadHealth, activity: loadActivity, advisor: loadAdvisor,
+     config: loadConfig, access: loadAccess,
      cost: loadCost, alerts: loadAlerts, owners: loadOwners, servers: loadServers }[t])();
   loadKpis();
 }
@@ -543,5 +608,30 @@ $('#s_AuthType').addEventListener('change', syncConnFields);
 let timer = null;
 function setAuto(on) { clearInterval(timer); if (on) timer = setInterval(refreshActive, 30000); }
 $('#autoRefresh').addEventListener('change', e => setAuto(e.target.checked));
+
+/* ---- theme (dark default, light optional) — persisted in localStorage ---- */
+function applyTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  $('#themeBtn').textContent = mode === 'light' ? '☀' : '☾';
+}
+applyTheme(localStorage.getItem('dbadash-theme') || 'dark');
+$('#themeBtn').addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  localStorage.setItem('dbadash-theme', next); applyTheme(next);
+});
+
+/* ---- client branding — drop a logo + name in www/branding.json ----
+   { "productName": "...", "tagline": "...", "logoUrl": "logo.png" }        */
+async function applyBranding() {
+  try {
+    const b = await fetch('branding.json').then(r => r.ok ? r.json() : null);
+    if (!b) return;
+    if (b.productName) { $('#brandName').textContent = b.productName; document.title = b.productName; }
+    if (b.tagline) $('#brandTag').textContent = b.tagline;
+    if (b.logoUrl) $('#brandLogo').outerHTML =
+      `<img id="brandLogo" class="logo-img" src="${esc(b.logoUrl)}" alt="${esc(b.productName || 'logo')}" />`;
+  } catch (e) { /* no branding file — keep defaults */ }
+}
+applyBranding();
 
 loadKpis(); loadAg(); setAuto(true);

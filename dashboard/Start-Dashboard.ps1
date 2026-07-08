@@ -188,7 +188,7 @@ Write-Host "DBADash dashboard running:  http://localhost:$Port/   (Ctrl+C to sto
 Write-Host "  data source: [$Instance].[$Database]" -ForegroundColor Gray
 
 $www   = Join-Path $PSScriptRoot 'www'
-$types = @{ '.html'='text/html'; '.css'='text/css'; '.js'='application/javascript'; '.svg'='image/svg+xml' }
+$types = @{ '.html'='text/html'; '.css'='text/css'; '.js'='application/javascript'; '.svg'='image/svg+xml'; '.json'='application/json'; '.png'='image/png'; '.jpg'='image/jpeg'; '.gif'='image/gif' }
 
 function Send-Json($ctx, $obj, [int]$code = 200) {
     $json  = $obj | ConvertTo-Json -Depth 6 -Compress
@@ -231,6 +231,11 @@ try {
                 '^GET /api/tablehealth$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TableHealth ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, UnsortedPct DESC;') ; break }
                 '^GET /api/topqueries$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TopQueries ORDER BY TotalCpuMs DESC;') ; break }
                 '^GET /api/findings$'    { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.Findings ORDER BY CASE Severity WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, AgeMinutes DESC;') ; break }
+                '^GET /api/serverinfo$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.ServerInfo ORDER BY ServerName;') ; break }
+                '^GET /api/configaudit$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.ConfigAudit ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, ServerName, ConfigItem;') ; break }
+                '^GET /api/accesscontrol$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.AccessControl ORDER BY ServerName, CASE AccessType WHEN ''Sysadmin'' THEN 0 WHEN ''Security admin'' THEN 1 WHEN ''Elevated'' THEN 2 WHEN ''Standard'' THEN 3 WHEN ''Connect-only'' THEN 4 ELSE 5 END;') ; break }
+                '^GET /api/principals$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.Principals ORDER BY ServerName, CASE AccessType WHEN ''Sysadmin'' THEN 0 WHEN ''Security admin'' THEN 1 WHEN ''Elevated'' THEN 2 WHEN ''Standard'' THEN 3 WHEN ''Connect-only'' THEN 4 ELSE 5 END, PrincipalName;') ; break }
+                '^GET /api/indexhealth$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.IndexHealth ORDER BY ServerName, Kind, ObjectName;') ; break }
                 '^GET /api/failedlogins$'{ Send-Json $ctx (Query-Json 'SELECT * FROM rpt.FailedLogins ORDER BY EventTime DESC;') ; break }
                 '^GET /api/logins$'      { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.LoginActivity ORDER BY ServerName, SessionCount DESC;') ; break }
                 '^GET /api/staletables$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.StaleTables ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, SizeGB DESC;') ; break }

@@ -9,15 +9,16 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">▣</span>
+      <span class="logo" id="brandLogo">▣</span>
       <div>
-        <h1>DBADash</h1>
-        <span class="tag">MSSQL &amp; Redshift · one-stop health desk</span>
+        <h1 id="brandName">DBADash</h1>
+        <span class="tag" id="brandTag">MSSQL &amp; Redshift · one-stop health desk</span>
       </div>
     </div>
     <div class="topbar-right">
       <span id="lastRun" class="muted">—</span>
       <label class="auto"><input type="checkbox" id="autoRefresh" checked /> auto-refresh 30s</label>
+      <button id="themeBtn" class="btn" title="Toggle light / dark theme">☾</button>
       <button id="refreshBtn" class="btn">↻ Refresh</button>
     </div>
   </header>
@@ -36,6 +37,8 @@
     <button class="tab" data-tab="growth">Growth</button>
     <button class="tab" data-tab="cost">Cost Anomaly</button>
     <button class="tab" data-tab="alerts">Alerts</button>
+    <button class="tab" data-tab="config">Server &amp; Config</button>
+    <button class="tab" data-tab="access">Access Control</button>
     <button class="tab" data-tab="owners">App Owners</button>
     <button class="tab" data-tab="servers">Servers</button>
   </nav>
@@ -78,11 +81,27 @@
       <div id="tableHealthTable" class="tablewrap"></div>
       <div class="panel-head sub"><h2>Top Queries by CPU <span class="muted">— MSSQL, active in last 24h</span></h2></div>
       <div id="topQueriesTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Index Health <span class="muted">— missing / unused indexes (highest impact first)</span></h2></div>
+      <div id="indexHealthTable" class="tablewrap"></div>
     </section>
 
     <section id="tab-advisor" class="panel">
       <div class="panel-head"><h2>Advisor <span class="muted">— investigates blocking &amp; prescribes how to prevent it</span></h2></div>
       <div id="advisorList"></div>
+    </section>
+
+    <section id="tab-config" class="panel">
+      <div class="panel-head"><h2>Server &amp; Patch Level <span class="muted">— SQL build, service pack &amp; CU per instance</span></h2></div>
+      <div id="serverInfoTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Configuration Drift <span class="muted">— sp_Blitz-style checks vs. recommended</span></h2></div>
+      <div id="configAuditTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-access" class="panel">
+      <div class="panel-head"><h2>Access Control <span class="muted">— principals grouped by the access they hold</span></h2></div>
+      <div id="accessRollup" class="kpis access-rollup"></div>
+      <div class="panel-head sub"><h2>Principals <span class="muted">— every login / group and its effective access</span></h2></div>
+      <div id="principalsTable" class="tablewrap"></div>
     </section>
 
     <section id="tab-growth" class="panel">
