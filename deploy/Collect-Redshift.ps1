@@ -33,6 +33,7 @@ $qScan  = Get-SqlBlock -Path $metricsFile -Name 'TABLE_SCAN'
 $qSpec  = Get-SqlBlock -Path $metricsFile -Name 'SPECTRUM'
 $qLogin = Get-SqlBlock -Path $metricsFile -Name 'RS_LOGINS'
 $qLock  = Get-SqlBlock -Path $metricsFile -Name 'LOCKS'
+$qCostQ = Get-SqlBlock -Path $metricsFile -Name 'COSTLY_QUERIES'
 
 function Get-RedshiftOdbcConnString($rs) {
     if ($rs.dsn) { return "DSN=$($rs.dsn);" }
@@ -121,6 +122,10 @@ foreach ($rs in $clusters) {
         # cfg.usp_Generate_Findings classifies anything waiting >= 30 min.
         $lck = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qLock) -ServerName $rs.clusterId -CollectedAt $now
         [void](Write-BulkTable -ConnString $centralConn -Table $lck -Destination 'mon.LockWait')
+
+        # per-query cost attribution: which queries drove Spectrum $ + scan volume
+        $cq = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qCostQ) -ServerName $rs.clusterId -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $cq -Destination 'mon.QueryCost')
 
         Write-CollectionLog -CentralConn $centralConn -Collector 'Redshift' -ServerName $rs.clusterId `
             -Status 'OK' -RowsLoaded ($n1+$n2+$n3+$n4+$n5+$n6+$n7) `

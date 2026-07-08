@@ -12,7 +12,7 @@ It answers the questions clients actually ask on day one:
 2. **How far behind is my data?** — AG redo lag (MSSQL) and ETL load freshness (Redshift), in one unified view.
 3. **When do my disks fill up?** — least-squares growth forecast → *days to full* + a *"buy N GB"* recommendation.
 4. **How fast are my databases/tables growing?** — per-database (MSSQL) and per-table (Redshift) size history on an SVG **growth chart** + a top-movers grid.
-5. **Is my Redshift bill about to spike?** — in-cluster **cost-anomaly detection** (z-score vs. 14-day rolling baseline) on scan/Spectrum/storage drivers. See [docs/COST_ANOMALY.md](docs/COST_ANOMALY.md).
+5. **Is my Redshift bill about to spike — and which query is doing it?** — in-cluster **cost-anomaly detection** (z-score vs. 14-day rolling baseline) on scan/Spectrum/storage drivers, **plus per-query cost attribution** (top queries by Spectrum $ + bytes scanned, with the user and SQL). See [docs/COST_ANOMALY.md](docs/COST_ANOMALY.md).
 6. **Who do I call, and how do I get told?** — an app-owner directory you edit from a form, plus **email alerting** (Database Mail *or* SMTP) routed to the owner.
 7. **Can I restore, and is my data intact?** — backup RPO health per database (full/diff/log ages vs. recovery model), **last good DBCC CHECKDB**, offline/suspect database states, and Agent job failures.
 8. **What's hurting right now?** — instance vitals (PLE, memory grants pending, blocked sessions, deadlocks), live **blocking chains** & long-running queries, top waits, top queries by CPU, and Redshift WLM queue depth, load errors, and **VACUUM/ANALYZE debt**.
@@ -69,6 +69,7 @@ Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 | `sql\17_advisor.sql` | Advisor / findings engine: `mon.LockWait`, `mon.Finding`, `cfg.usp_Generate_Findings` (Redshift long-block rules), `rpt.Findings`; extends alert eval + purge |
 | `sql\18_server_audit.sql` | Patch/build (`mon.ServerInfo`), config drift (`mon.ConfigAudit`), access control (`mon.SecurityPrincipal`), index health (`mon.IndexHealth`); tempdb/VLF vitals; Overview v4 |
 | `sql\19_bottlenecks.sql` | Performance bottlenecks: file I/O latency (`mon.FileIOStats`), wait deltas (`rpt.WaitDelta`), autogrowth events (`mon.AutoGrowth`); Overview v5, purge v6 |
+| `sql\20_query_cost.sql` | Redshift **cost by query**: top queries by Spectrum $ + bytes scanned (`mon.QueryCost`, `rpt.CostlyQueries`); purge v7 |
 | `sql\07`, `sql\11`, `sql\13` | Optional demo seeds: core → growth/cost/alerts → health/activity |
 | `redshift\redshift_metrics.sql` | Redshift SQL blocks: DISK, FRESHNESS, TABLE_SIZE, TABLE_HEALTH, ACTIVITY, RS_VITALS, TABLE_SCAN, SPECTRUM, RS_LOGINS, COST |
 | `deploy\Deploy-DBADash.ps1` | Builds / upgrades the central database (runs numbered SQL scripts in order) |
@@ -170,7 +171,7 @@ remembered per browser):
 | **Access Control** | Logins/groups by access type (Sysadmin/Elevated/…) with per-type counts + full principal list |
 | **Disk Forecast** | Days-to-full per volume + "buy N GB" sizing for 180-day headroom |
 | **Growth** | SVG trend chart (per DB or per Redshift table) + top-movers grid (GB/day) |
-| **Cost Anomaly** | Redshift cost-driver z-score vs. baseline, stale tables with $/month reclaim, Spectrum per-external-table cost |
+| **Cost Anomaly** | Redshift cost-driver z-score vs. baseline, stale tables with $/month reclaim, Spectrum per-external-table cost, **most-expensive queries** (per-query $) |
 | **Alerts** | Active CRIT/WARN conditions with severity, category, affected server |
 | **App Owners** | Editable app-owner directory: server, DB, tier, owner, email, on-call |
 | **Servers** | Monitored server inventory: platform, environment, last collection status; + **DBeaver-style connection form** |
@@ -234,6 +235,14 @@ cost — a candidate for archiving or dropping.
 
 **Spectrum cost** (`rpt.SpectrumByTable`) reads `svl_s3query_summary` to surface
 external-table S3 scans from the last 24 h with an estimated cost at ~$5/TB.
+
+**Cost by query** (`sql\20`, `rpt.CostlyQueries`) attributes the bill to individual
+queries: it joins `svl_s3query_summary` (billable Spectrum bytes), `stl_scan`
+(local bytes scanned), `stl_query`/`stl_querytext` and `pg_user` to rank the top 25
+queries in the last 24 h by **estimated $** (Spectrum @ $5/TB) plus scan volume,
+with the user and the SQL text — so you can point at the exact query running up the
+AWS bill (e.g. a full external-table scan with no partition filter). On
+RA3/Serverless, swap the block to `SYS_QUERY_HISTORY` (`scan_size_bytes`).
 
 **Query performance** (`rpt.TopQueries`) captures the top 10 statements from
 `sys.dm_exec_query_stats` by total CPU time, limited to plans active in the last

@@ -149,6 +149,12 @@ const DATA = {
     { ServerName:'rs-analytics', ExternalTable:'ext.weblogs_2026', QueryCount:38, TBScanned:0.2480, EstCostUSD:1.24 },
     { ServerName:'rs-analytics', ExternalTable:'(unknown)', QueryCount:6, TBScanned:0.0310, EstCostUSD:0.16 },
   ],
+  '/api/costlyqueries': () => [
+    { Status:'CRIT', ServerName:'rs-analytics', QueryId:884213, UserName:'etl_user', StartTime:new Date(Date.now()-2*36e5).toISOString().slice(0,19), ElapsedSec:412, ScanGB:31200.0, SpectrumGB:2380.0, EstCostUSD:11.62, QueryText:'SELECT * FROM ext.clickstream_raw c JOIN fact_sales f ON ... WHERE event_date > ...  /* full external scan, no partition filter */' },
+    { Status:'WARN', ServerName:'rs-analytics', QueryId:884560, UserName:'bi_svc', StartTime:new Date(Date.now()-5*36e5).toISOString().slice(0,19), ElapsedSec:190, ScanGB:8100.0, SpectrumGB:510.0, EstCostUSD:2.49, QueryText:'CREATE TABLE stg_daily AS SELECT ... FROM ext.weblogs_2026 WHERE 1=1' },
+    { Status:'WARN', ServerName:'rs-analytics', QueryId:884901, UserName:'analyst_bob', StartTime:new Date(Date.now()-6*36e5).toISOString().slice(0,19), ElapsedSec:240, ScanGB:920.0, SpectrumGB:0.0, EstCostUSD:0.00, QueryText:'SELECT customer_id, SUM(amount) FROM fact_sales GROUP BY 1  /* no sort key, scans whole table */' },
+    { Status:'OK', ServerName:'rs-analytics', QueryId:885110, UserName:'dashboard_ro', StartTime:new Date(Date.now()-1*36e5).toISOString().slice(0,19), ElapsedSec:12, ScanGB:44.0, SpectrumGB:0.0, EstCostUSD:0.00, QueryText:'SELECT TOP 100 * FROM dim_customer WHERE region = ?' },
+  ],
   '/api/tablehealth': () => [
     { Status:'CRIT', ServerName:'rs-analytics', TableName:'public.fact_sales', UnsortedPct:62.4, StatsOffPct:18.0, TableRows:4820000000 },
     { Status:'WARN', ServerName:'rs-analytics', TableName:'public.stg_events', UnsortedPct:35.1, StatsOffPct:44.9, TableRows:91000000 },

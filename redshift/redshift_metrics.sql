@@ -123,6 +123,53 @@ FROM stl_connection_log
 WHERE event = 'authentication failure'
   AND recordtime > DATEADD(day, -1, GETDATE());
 
+--==COSTLY_QUERIES==--
+-- Top queries in the last 24h by AWS cost: Spectrum $ (billed per TB scanned)
+-- plus local bytes scanned (compute pressure). This attributes the bill to a
+-- specific query + user. Must return the mon.QueryCost shape: QueryId, UserName,
+-- StartTime, ElapsedSec, ScanMB, SpectrumMB, EstCostUSD, QueryText.
+-- Uses STL/SVL (provisioned). On RA3/Serverless swap in SYS_QUERY_HISTORY
+-- (scan_size_bytes / elapsed_time) - edit to fit your edition.
+WITH s3 AS (
+    SELECT query, SUM(s3_scanned_bytes) AS s3_bytes
+    FROM svl_s3query_summary
+    WHERE starttime > DATEADD(day, -1, GETDATE())
+    GROUP BY query
+),
+scn AS (
+    SELECT query, SUM(bytes) AS scan_bytes
+    FROM stl_scan
+    WHERE starttime > DATEADD(day, -1, GETDATE()) AND userid > 1
+    GROUP BY query
+),
+q AS (
+    SELECT query, userid, starttime,
+           DATEDIFF(second, starttime, endtime) AS elapsed_sec
+    FROM stl_query
+    WHERE starttime > DATEADD(day, -1, GETDATE()) AND userid > 1
+),
+qt AS (
+    SELECT query, LISTAGG(text) WITHIN GROUP (ORDER BY sequence) AS text
+    FROM stl_querytext GROUP BY query
+)
+SELECT
+    QueryId    = q.query,
+    UserName   = TRIM(u.usename),
+    StartTime  = q.starttime,
+    ElapsedSec = q.elapsed_sec,
+    ScanMB     = ROUND(COALESCE(scn.scan_bytes,0) / 1048576.0, 1),
+    SpectrumMB = ROUND(COALESCE(s3.s3_bytes,0)   / 1048576.0, 1),
+    EstCostUSD = ROUND(COALESCE(s3.s3_bytes,0)::numeric / 1e12 * 5.0, 2),
+    QueryText  = SUBSTRING(TRIM(qt.text), 1, 500)
+FROM q
+LEFT JOIN s3  ON s3.query  = q.query
+LEFT JOIN scn ON scn.query = q.query
+LEFT JOIN qt  ON qt.query  = q.query
+LEFT JOIN pg_user u ON u.usesysid = q.userid
+WHERE COALESCE(s3.s3_bytes,0) > 0 OR COALESCE(scn.scan_bytes,0) > 0
+ORDER BY EstCostUSD DESC, ScanMB DESC
+LIMIT 25;
+
 --==LOCKS==--
 -- Lock waits for the Advisor (long-block detection). Each row = one session
 -- waiting on a lock, matched to the blocker holding it. Must return the

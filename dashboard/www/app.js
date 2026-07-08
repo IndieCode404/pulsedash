@@ -419,8 +419,21 @@ async function loadCost() {
     }
     await drawCostTrend();
   }
-  const [rows, stale, spectrum] = await Promise.all([
-    api('/api/cost'), api('/api/staletables').catch(() => []), api('/api/spectrum').catch(() => [])]);
+  const [rows, stale, spectrum, costly] = await Promise.all([
+    api('/api/cost'), api('/api/staletables').catch(() => []), api('/api/spectrum').catch(() => []),
+    api('/api/costlyqueries').catch(() => [])]);
+  $('#costlyQueriesTable').innerHTML = table(costly, [
+    { h: 'Status',   k: 'Status', f: pill },
+    { h: 'Cluster',  k: 'ServerName' },
+    { h: 'Query',    k: 'QueryId' },
+    { h: 'User',     k: 'UserName' },
+    { h: 'When',     k: 'StartTime', f: fmtDt },
+    { h: 'Runtime',  k: 'ElapsedSec', f: v => v == null ? '—' : fmtLag(v) },
+    { h: 'Scanned',  k: 'ScanGB', f: v => v == null ? '—' : v + ' GB' },
+    { h: 'Spectrum', k: 'SpectrumGB', f: v => v == null ? '—' : v + ' GB' },
+    { h: 'Est cost', k: 'EstCostUSD', f: v => v == null ? '—' : '$' + v },
+    { h: 'SQL',      k: 'QueryText', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 70))}${(v||'').length > 70 ? '…' : ''}</span>` },
+  ]);
   $('#staleTablesTable').innerHTML = table(stale, [
     { h: 'Status',  k: 'Status', f: pill },
     { h: 'Cluster', k: 'ServerName' },
