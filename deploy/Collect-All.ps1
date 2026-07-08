@@ -278,10 +278,13 @@ if ($cfg.redshift) {
     & "$PSScriptRoot\Collect-Redshift.ps1" -ConfigPath $ConfigPath
 }
 
-# ---- Post-process: forecast, cost anomaly, alert evaluation, purge ----
-Write-Host "Refreshing forecast, detecting cost anomalies, evaluating alerts..." -ForegroundColor Cyan
+# ---- Post-process: forecast, cost anomaly, findings, alert evaluation, purge ----
+# NOTE: Generate_Findings must run BEFORE Evaluate_Alerts so CRIT findings are
+# available for the alert set to pick up (and dedup/auto-resolve) this cycle.
+Write-Host "Refreshing forecast, detecting cost anomalies, generating findings, evaluating alerts..." -ForegroundColor Cyan
 [void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Refresh_DiskForecast;")
 [void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Detect_CostAnomaly;")
+[void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Generate_Findings;")
 [void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Evaluate_Alerts;")
 
 # ---- Alerting (optional) ----

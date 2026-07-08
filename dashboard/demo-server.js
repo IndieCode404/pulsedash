@@ -25,7 +25,23 @@ let servers = [
 
 const DATA = {
   '/api/servers': () => [...servers].sort((a,b)=>(b.IsActive-a.IsActive)||a.ServerName.localeCompare(b.ServerName)),
-  '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
+  '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, OpenFindings:2, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
+  '/api/findings': () => [
+    { FindingID:1, Platform:'Redshift', Category:'Blocking', Severity:'CRIT', ServerName:'rs-analytics', AgeMinutes:47,
+      Title:'Lock wait 47 min on public.fact_sales (PID 2841 blocked by PID 2790)',
+      Symptom:'PID 2841 (etl_user) has waited 47 min for a lock on public.fact_sales, held by PID 2790 (analyst_bob).',
+      RootCause:'Blocker PID 2790 holds the lock but has no running query - it is idle inside an open transaction. A session or app issued BEGIN and never COMMIT/ROLLBACK.',
+      Recommendation:'Confirm the owner of PID 2790 is safe to release, then: SELECT pg_terminate_backend(2790);',
+      Prevention:'Set an idle-session / statement timeout; make the app COMMIT or ROLLBACK deterministically; do not leave BEGIN open in ad-hoc SQL tools; alert on idle-in-transaction sessions.',
+      Evidence:'waiter_pid=2841 blocker_pid=2790 lock_mode=AccessExclusiveLock wait_min=47 idle_in_txn=1 conflicts_24h=0' },
+    { FindingID:2, Platform:'Redshift', Category:'Blocking', Severity:'CRIT', ServerName:'rs-analytics', AgeMinutes:36,
+      Title:'Lock wait 36 min on public.dim_customer (PID 2955 blocked by PID 2903)',
+      Symptom:'PID 2955 (bi_svc) has waited 36 min for a lock on public.dim_customer, held by PID 2903 (etl_user).',
+      RootCause:'2 serialization-isolation aborts on this table in the last 24h - concurrent transactions are writing overlapping rows and serializing on each other.',
+      Recommendation:'Retry the aborted transactions, and serialize the competing writers (one writer, or load a staging table then a single MERGE).',
+      Prevention:'Stagger ETL so writers to the same table do not overlap; funnel writes through a staging table + single MERGE; keep transactions small.',
+      Evidence:'waiter_pid=2955 blocker_pid=2903 lock_mode=ShareRowExclusiveLock wait_min=36 idle_in_txn=0 conflicts_24h=2 blocker_sql="INSERT INTO dim_customer SELECT * FROM stg_customer ..."' },
+  ],
   '/api/backups': () => [
     { Status:'CRIT', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', StateDesc:'ONLINE', RecoveryModel:'FULL', LastFullBackup:new Date(Date.now()-9*864e5).toISOString().slice(0,19), HoursSinceFull:216, LastLogBackup:new Date(Date.now()-9*36e5).toISOString().slice(0,19), LastGoodCheckDb:new Date(Date.now()-45*864e5).toISOString().slice(0,19), PageVerify:'CHECKSUM', IsAutoShrink:false },
     { Status:'CRIT', ServerName:'SQLPROD03', DatabaseName:'OldAppDB', StateDesc:'OFFLINE', RecoveryModel:'SIMPLE', LastFullBackup:new Date(Date.now()-40*864e5).toISOString().slice(0,19), HoursSinceFull:960, LastLogBackup:null, LastGoodCheckDb:null, PageVerify:'NONE', IsAutoShrink:false },

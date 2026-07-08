@@ -44,6 +44,7 @@ async function loadKpis() {
     { lbl: 'Backups at risk',num: o.BackupsAtRisk,    cls: o.BackupsAtRisk > 0 ? 'crit' : 'ok', tab: 'health' },
     { lbl: 'Job failures 24h', num: o.JobFailures24h, cls: o.JobFailures24h > 0 ? 'warn' : 'ok', tab: 'health' },
     { lbl: 'Blocked sessions', num: o.BlockedSessions, cls: o.BlockedSessions > 0 ? 'crit' : 'ok', tab: 'activity' },
+    { lbl: 'Advisor findings', num: o.OpenFindings, cls: o.OpenFindings > 0 ? 'crit' : 'ok', tab: 'advisor' },
     { lbl: 'No owner',       num: o.AppsWithoutOwner, cls: o.AppsWithoutOwner > 0 ? 'warn' : 'ok', tab: 'owners' },
   ];
   $('#kpis').innerHTML = cards.map(c =>
@@ -218,6 +219,30 @@ async function loadActivity() {
     { h: 'Stats off %', k: 'StatsOffPct', f: v => v + '%' },
     { h: 'Rows',    k: 'TableRows', f: num },
   ]);
+}
+
+/* ---- advisor tab (findings: symptom → root cause → fix → prevent) ---- */
+async function loadAdvisor() {
+  const rows = await api('/api/findings').catch(() => []);
+  if (!rows || !rows.length) {
+    $('#advisorList').innerHTML = '<div class="empty">No findings — nothing needs investigation right now. 🎉</div>';
+    return;
+  }
+  $('#advisorList').innerHTML = rows.map(f => `
+    <div class="finding ${esc(f.Severity)}">
+      <div class="finding-head">
+        ${pill(f.Severity)}
+        <b>${esc(f.Title)}</b>
+        <span class="muted">· ${esc(f.Category)}${f.ServerName ? ' · ' + esc(f.ServerName) : ''}${f.AgeMinutes != null ? ' · open ' + fmtLag(f.AgeMinutes * 60) : ''}</span>
+      </div>
+      <div class="finding-body">
+        <div class="fr"><span class="fl">Symptom</span><span>${esc(f.Symptom)}</span></div>
+        <div class="fr"><span class="fl">Root cause</span><span>${esc(f.RootCause)}</span></div>
+        <div class="fr fix"><span class="fl">Fix now</span><span>${esc(f.Recommendation)}</span></div>
+        <div class="fr prevent"><span class="fl">Prevent</span><span>${esc(f.Prevention)}</span></div>
+        ${f.Evidence ? `<div class="fr"><span class="fl">Evidence</span><code>${esc(f.Evidence)}</code></div>` : ''}
+      </div>
+    </div>`).join('');
 }
 
 /* ---- growth (SVG line chart, no chart library) ---- */
@@ -473,7 +498,7 @@ async function saveServer() {
 function refreshActive() {
   const t = $('.tab.active').dataset.tab;
   ({ ag: loadAg, lag: loadLag, disk: loadDisk, growth: loadGrowth,
-     health: loadHealth, activity: loadActivity,
+     health: loadHealth, activity: loadActivity, advisor: loadAdvisor,
      cost: loadCost, alerts: loadAlerts, owners: loadOwners, servers: loadServers }[t])();
   loadKpis();
 }

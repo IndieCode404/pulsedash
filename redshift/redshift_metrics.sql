@@ -123,6 +123,59 @@ FROM stl_connection_log
 WHERE event = 'authentication failure'
   AND recordtime > DATEADD(day, -1, GETDATE());
 
+--==LOCKS==--
+-- Lock waits for the Advisor (long-block detection). Each row = one session
+-- waiting on a lock, matched to the blocker holding it. Must return the
+-- mon.LockWait shape: WaiterPid, WaiterUser, Relation, WaitMinutes,
+-- WaiterQuery, BlockerPid, BlockerUser, BlockerLockMode, BlockerIdleInTxn,
+-- BlockerQuery, ConflictCount24h.
+--
+-- svv_transactions has one row per held/requested lock; granted='f' is a waiter.
+-- We match each waiter to a granted holder of the same relation, keep the
+-- oldest such blocker, and flag the blocker "idle in transaction" when it has
+-- no row in stv_inflight (holding a lock with nothing running). WaitMinutes is
+-- approximated from the blocked transaction's start time. EDIT if your cluster
+-- version exposes these differently (Serverless uses SYS_* views).
+SELECT
+    waiter_pid                                       AS WaiterPid,
+    waiter_user                                      AS WaiterUser,
+    relation_name                                    AS Relation,
+    wait_minutes                                     AS WaitMinutes,
+    SUBSTRING(TRIM(waiter_sql), 1, 500)              AS WaiterQuery,
+    blocker_pid                                      AS BlockerPid,
+    blocker_user                                     AS BlockerUser,
+    blocker_lock_mode                                AS BlockerLockMode,
+    blocker_idle_in_txn                              AS BlockerIdleInTxn,
+    SUBSTRING(TRIM(blocker_sql), 1, 500)             AS BlockerQuery,
+    conflict_count_24h                               AS ConflictCount24h
+FROM (
+    SELECT
+        w.pid                                         AS waiter_pid,
+        TRIM(w.txn_owner)                             AS waiter_user,
+        COALESCE(TRIM(c.relname), w.relation::varchar) AS relation_name,
+        DATEDIFF(minute, w.txn_start, GETDATE())      AS wait_minutes,
+        rw.query                                      AS waiter_sql,
+        b.pid                                         AS blocker_pid,
+        TRIM(b.txn_owner)                             AS blocker_user,
+        TRIM(b.lock_mode)                             AS blocker_lock_mode,
+        CASE WHEN bi.pid IS NULL THEN 1 ELSE 0 END    AS blocker_idle_in_txn,
+        bi.text                                       AS blocker_sql,
+        COALESCE(cf.cnt, 0)                           AS conflict_count_24h,
+        ROW_NUMBER() OVER (PARTITION BY w.pid, w.relation ORDER BY b.txn_start) AS rn
+    FROM svv_transactions w
+    JOIN svv_transactions b
+      ON b.relation = w.relation AND b.granted = 't' AND b.pid <> w.pid
+    LEFT JOIN pg_class      c  ON c.oid = w.relation
+    LEFT JOIN stv_recents   rw ON rw.pid = w.pid AND rw.status = 'Running'
+    LEFT JOIN stv_inflight  bi ON bi.pid = b.pid
+    LEFT JOIN (SELECT table_id, COUNT(*) AS cnt
+               FROM stl_tr_conflict
+               WHERE xact_start_ts > DATEADD(day, -1, GETDATE())
+               GROUP BY table_id) cf ON cf.table_id = w.relation
+    WHERE w.granted = 'f'
+) t
+WHERE rn = 1 AND wait_minutes >= 5;   -- snapshot early; the engine flags >= 30 min
+
 --==COST==--
 -- Cost DRIVERS for anomaly detection. Each row = one metric for the last ~24h.
 -- Must return: MetricName, MetricValue, MetricUnit. EDIT to match your edition

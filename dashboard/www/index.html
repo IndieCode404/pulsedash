@@ -31,6 +31,7 @@
     <button class="tab" data-tab="lag">Data Lag</button>
     <button class="tab" data-tab="health">Health</button>
     <button class="tab" data-tab="activity">Activity</button>
+    <button class="tab" data-tab="advisor">Advisor</button>
     <button class="tab" data-tab="disk">Disk Forecast</button>
     <button class="tab" data-tab="growth">Growth</button>
     <button class="tab" data-tab="cost">Cost Anomaly</button>
@@ -77,6 +78,11 @@
       <div id="tableHealthTable" class="tablewrap"></div>
       <div class="panel-head sub"><h2>Top Queries by CPU <span class="muted">— MSSQL, active in last 24h</span></h2></div>
       <div id="topQueriesTable" class="tablewrap"></div>
+    </section>
+
+    <section id="tab-advisor" class="panel">
+      <div class="panel-head"><h2>Advisor <span class="muted">— investigates blocking &amp; prescribes how to prevent it</span></h2></div>
+      <div id="advisorList"></div>
     </section>
 
     <section id="tab-growth" class="panel">

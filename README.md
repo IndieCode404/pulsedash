@@ -18,6 +18,7 @@ It answers the questions clients actually ask on day one:
 8. **What's hurting right now?** — instance vitals (PLE, memory grants pending, blocked sessions, deadlocks), live **blocking chains** & long-running queries, top waits, top queries by CPU, and Redshift WLM queue depth, load errors, and **VACUUM/ANALYZE debt**.
 9. **Who is on my server and who keeps failing to log in?** — failed-login audit (MSSQL error log + Redshift connection log) and a live session inventory showing host, app, login, and duration.
 10. **Am I paying for Redshift storage I never read?** — **stale table detection** (last-scan age vs. your threshold) with $/month reclaim estimate, plus a **Spectrum per-external-table cost** breakdown.
+11. **Why is this blocked, and how do I stop it recurring?** — an **Advisor** that doesn't just show a Redshift lock wait > 30 min but investigates it: classifies the root cause (idle-in-transaction / DDL behind a read / serialization conflicts / VACUUM) and prints a **fix now** + **prevent next time** for each, and raises a CRIT alert.
 
 Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 
@@ -63,6 +64,7 @@ Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 | `sql\14_servers_admin.sql` | `cfg.usp_Server_Upsert`, `usp_Server_Delete`, `rpt.Servers` (last collection status) |
 | `sql\15_perf_audit_cost.sql` | Top queries by CPU, failed-login audit, session inventory, stale-table detection, Spectrum scans |
 | `sql\16_connections.sql` | Adds connection fields to `cfg.Servers`: Host, Port, DatabaseName, AuthType, UserName, PasswordEnc (DPAPI blob) |
+| `sql\17_advisor.sql` | Advisor / findings engine: `mon.LockWait`, `mon.Finding`, `cfg.usp_Generate_Findings` (Redshift long-block rules), `rpt.Findings`; extends alert eval + purge |
 | `sql\07`, `sql\11`, `sql\13` | Optional demo seeds: core → growth/cost/alerts → health/activity |
 | `redshift\redshift_metrics.sql` | Redshift SQL blocks: DISK, FRESHNESS, TABLE_SIZE, TABLE_HEALTH, ACTIVITY, RS_VITALS, TABLE_SCAN, SPECTRUM, RS_LOGINS, COST |
 | `deploy\Deploy-DBADash.ps1` | Builds / upgrades the central database (runs numbered SQL scripts in order) |
@@ -72,7 +74,7 @@ Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 | `deploy\Common.ps1` | Shared helpers: config loader, SQL helpers, DPAPI encrypt/decrypt — no external module deps |
 | `deploy\config\dbadash.example.json` | Copy to `dbadash.json`, edit with your instance + cluster details |
 | `agent\Create-AgentJobs.sql` | Creates the **"DBADash - Collect"** SQL Agent job |
-| `dashboard\Start-Dashboard.ps1` + `www\` | Self-contained PowerShell HTTP server + HTML/CSS/JS dashboard (10 tabs) |
+| `dashboard\Start-Dashboard.ps1` + `www\` | Self-contained PowerShell HTTP server + HTML/CSS/JS dashboard (11 tabs) |
 | `powerbi\`, `ssrs\` | Connect Power BI / SSRS to the same `rpt.*` views |
 | `docs\COST_ANOMALY.md` | Redshift cost-anomaly playbook: AWS-native vs. in-cluster approaches |
 
@@ -149,7 +151,7 @@ cd K:\DBA_Monitoring\DBADash\dashboard
 ```
 *(Prefer Power BI or SSRS? See `powerbi\` / `ssrs\` — same `rpt.*` views.)*
 
-The dashboard has **10 tabs**:
+The dashboard has **11 tabs**:
 
 | Tab | What you see |
 |-----|-------------|
@@ -157,6 +159,7 @@ The dashboard has **10 tabs**:
 | **Data Lag** | AG redo lag (MSSQL) + ETL load freshness (Redshift) in seconds |
 | **Health** | Backup RPO, CHECKDB age, job failures (7 days), failed-login audit, session inventory |
 | **Activity** | Instance vitals, blocking/long-running queries, top waits, Redshift table maintenance, top 10 queries by CPU |
+| **Advisor** | Findings that investigate blocking and prescribe a fix + prevention (see below) |
 | **Disk Forecast** | Days-to-full per volume + "buy N GB" sizing for 180-day headroom |
 | **Growth** | SVG trend chart (per DB or per Redshift table) + top-movers grid (GB/day) |
 | **Cost Anomaly** | Redshift cost-driver z-score vs. baseline, stale tables with $/month reclaim, Spectrum per-external-table cost |
@@ -233,6 +236,18 @@ Store.
 log for failed authentication attempts and queries `sys.dm_exec_sessions` for the
 live session inventory (login, host, app, database, duration). Redshift failed
 logins come from `stl_connection_log WHERE event = 'authentication failure'`.
+
+**Advisor** (`cfg.usp_Generate_Findings`) is a shared *findings engine*, not a
+one-off check: collectors only snapshot raw evidence, and this engine reads those
+snapshots to emit findings shaped as **Symptom → Root cause → Fix now → Prevent**.
+The first rule detects Redshift lock waits older than 30 min (from `mon.LockWait`,
+captured each cycle from `svv_transactions` + `stl_tr_conflict`) and classifies the
+blocker into one of four patterns — **idle-in-transaction**, **DDL behind a read**,
+**serialization conflicts**, or **VACUUM** — each with its own prescriptive fix and
+prevention text. Findings land in `mon.Finding` (deduped, auto-resolving like
+alerts), render on the **Advisor** tab, and CRIT ones flow into the email pipeline
+as `Category = 'Advisor'`. Adding the next advisor (MSSQL blocking, index health,
+config drift) is just another rule appended inside the same proc.
 
 **Alerts** (`cfg.usp_Evaluate_Alerts`) scans every `rpt.*` view, keeps one active
 row per problem in `mon.AlertHistory` (auto-resolving cleared conditions), and

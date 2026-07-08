@@ -230,6 +230,7 @@ try {
                 '^GET /api/waits$'    { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TopWaits ORDER BY ServerName, WaitTimeMs DESC;') ; break }
                 '^GET /api/tablehealth$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TableHealth ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, UnsortedPct DESC;') ; break }
                 '^GET /api/topqueries$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.TopQueries ORDER BY TotalCpuMs DESC;') ; break }
+                '^GET /api/findings$'    { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.Findings ORDER BY CASE Severity WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, AgeMinutes DESC;') ; break }
                 '^GET /api/failedlogins$'{ Send-Json $ctx (Query-Json 'SELECT * FROM rpt.FailedLogins ORDER BY EventTime DESC;') ; break }
                 '^GET /api/logins$'      { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.LoginActivity ORDER BY ServerName, SessionCount DESC;') ; break }
                 '^GET /api/staletables$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.StaleTables ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, SizeGB DESC;') ; break }

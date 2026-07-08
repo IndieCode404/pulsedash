@@ -32,6 +32,7 @@ $qVit   = Get-SqlBlock -Path $metricsFile -Name 'RS_VITALS'
 $qScan  = Get-SqlBlock -Path $metricsFile -Name 'TABLE_SCAN'
 $qSpec  = Get-SqlBlock -Path $metricsFile -Name 'SPECTRUM'
 $qLogin = Get-SqlBlock -Path $metricsFile -Name 'RS_LOGINS'
+$qLock  = Get-SqlBlock -Path $metricsFile -Name 'LOCKS'
 
 function Get-RedshiftOdbcConnString($rs) {
     if ($rs.dsn) { return "DSN=$($rs.dsn);" }
@@ -115,6 +116,11 @@ foreach ($rs in $clusters) {
         [void](Write-BulkTable -ConnString $centralConn -Table $spc -Destination 'mon.SpectrumScan')
         $flg = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qLogin) -ServerName $rs.clusterId -Platform 'Redshift' -CollectedAt $now
         [void](Write-BulkTable -ConnString $centralConn -Table $flg -Destination 'mon.FailedLogin')
+
+        # lock waits -> Advisor (long-block detection). Snapshotted every cycle;
+        # cfg.usp_Generate_Findings classifies anything waiting >= 30 min.
+        $lck = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qLock) -ServerName $rs.clusterId -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $lck -Destination 'mon.LockWait')
 
         Write-CollectionLog -CentralConn $centralConn -Collector 'Redshift' -ServerName $rs.clusterId `
             -Status 'OK' -RowsLoaded ($n1+$n2+$n3+$n4+$n5+$n6+$n7) `
