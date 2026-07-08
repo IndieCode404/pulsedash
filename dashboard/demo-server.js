@@ -25,7 +25,25 @@ let servers = [
 
 const DATA = {
   '/api/servers': () => [...servers].sort((a,b)=>(b.IsActive-a.IsActive)||a.ServerName.localeCompare(b.ServerName)),
-  '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, OpenFindings:2, ConfigWarnings:3, Sysadmins:7, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
+  '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, OpenFindings:2, HighLatencyFiles:2, ConfigWarnings:3, Sysadmins:7, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
+  '/api/fileio': () => [
+    { Status:'CRIT', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', FileType:'ROWS', ReadLatencyMs:68.4, WriteLatencyMs:12.1, AvgLatencyMs:41.2, SizeMB:512000, TotalReadMB:1840000, TotalWriteMB:210000 },
+    { Status:'WARN', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', FileType:'LOG', ReadLatencyMs:3.2, WriteLatencyMs:28.7, AvgLatencyMs:24.9, SizeMB:81920, TotalReadMB:9000, TotalWriteMB:640000 },
+    { Status:'OK', ServerName:'SQLPROD01\\AG', DatabaseName:'SalesDB', FileType:'ROWS', ReadLatencyMs:4.1, WriteLatencyMs:2.8, AvgLatencyMs:3.6, SizeMB:141312, TotalReadMB:920000, TotalWriteMB:180000 },
+    { Status:'OK', ServerName:'SQLPROD01\\AG', DatabaseName:'tempdb', FileType:'ROWS', ReadLatencyMs:1.9, WriteLatencyMs:2.2, AvgLatencyMs:2.0, SizeMB:40960, TotalReadMB:410000, TotalWriteMB:388000 },
+  ],
+  '/api/waitdelta': () => [
+    { ServerName:'SQLPROD03', WaitType:'PAGEIOLATCH_SH', DeltaMs:41200, WaitPct:52.1 },
+    { ServerName:'SQLPROD03', WaitType:'LCK_M_X', DeltaMs:22800, WaitPct:28.8 },
+    { ServerName:'SQLPROD03', WaitType:'WRITELOG', DeltaMs:9400, WaitPct:11.9 },
+    { ServerName:'SQLPROD01\\AG', WaitType:'HADR_SYNC_COMMIT', DeltaMs:6100, WaitPct:44.0 },
+    { ServerName:'SQLPROD01\\AG', WaitType:'CXPACKET', DeltaMs:3800, WaitPct:27.4 },
+  ],
+  '/api/autogrowth': () => [
+    { Status:'WARN', ServerName:'SQLPROD03', EventTime:new Date(Date.now()-3*36e5).toISOString().slice(0,19), DatabaseName:'FinanceDB', FileType:'ROWS', GrowthMB:1024.0, DurationMs:2380 },
+    { Status:'WARN', ServerName:'SQLPROD03', EventTime:new Date(Date.now()-3*36e5+4000).toISOString().slice(0,19), DatabaseName:'FinanceDB', FileType:'LOG', GrowthMB:512.0, DurationMs:1120 },
+    { Status:'OK', ServerName:'SQLPROD01\\AG', EventTime:new Date(Date.now()-30*36e5).toISOString().slice(0,19), DatabaseName:'SalesDB', FileType:'ROWS', GrowthMB:256.0, DurationMs:180 },
+  ],
   '/api/serverinfo': () => [
     { ServerName:'SQLPROD01\\AG', ProductMajor:'15', ProductVersion:'15.0.4360.2', ProductLevel:'RTM', ProductUpdateLevel:'CU18', PatchLevel:'v15.0.4360.2 · RTM-CU18', Edition:'Enterprise Edition (64-bit)', OSVersion:'Windows Server 2019 10.0', CpuCount:16, PhysicalMemoryMB:262144, IsClustered:true, IsHadrEnabled:true, StartTime:new Date(Date.now()-40*864e5).toISOString().slice(0,19) },
     { ServerName:'SQLPROD03', ProductMajor:'15', ProductVersion:'15.0.2000.5', ProductLevel:'RTM', ProductUpdateLevel:'', PatchLevel:'v15.0.2000.5 · RTM', Edition:'Standard Edition (64-bit)', OSVersion:'Windows Server 2019 10.0', CpuCount:8, PhysicalMemoryMB:65536, IsClustered:false, IsHadrEnabled:false, StartTime:new Date(Date.now()-12*864e5).toISOString().slice(0,19) },

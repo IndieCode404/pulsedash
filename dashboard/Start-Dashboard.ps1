@@ -236,6 +236,9 @@ try {
                 '^GET /api/accesscontrol$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.AccessControl ORDER BY ServerName, CASE AccessType WHEN ''Sysadmin'' THEN 0 WHEN ''Security admin'' THEN 1 WHEN ''Elevated'' THEN 2 WHEN ''Standard'' THEN 3 WHEN ''Connect-only'' THEN 4 ELSE 5 END;') ; break }
                 '^GET /api/principals$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.Principals ORDER BY ServerName, CASE AccessType WHEN ''Sysadmin'' THEN 0 WHEN ''Security admin'' THEN 1 WHEN ''Elevated'' THEN 2 WHEN ''Standard'' THEN 3 WHEN ''Connect-only'' THEN 4 ELSE 5 END, PrincipalName;') ; break }
                 '^GET /api/indexhealth$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.IndexHealth ORDER BY ServerName, Kind, ObjectName;') ; break }
+                '^GET /api/fileio$'      { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.FileIOStats ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, (ISNULL(ReadLatencyMs,0)+ISNULL(WriteLatencyMs,0)) DESC;') ; break }
+                '^GET /api/waitdelta$'   { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.WaitDelta ORDER BY ServerName, DeltaMs DESC;') ; break }
+                '^GET /api/autogrowth$'  { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.AutoGrowthEvents ORDER BY EventTime DESC;') ; break }
                 '^GET /api/failedlogins$'{ Send-Json $ctx (Query-Json 'SELECT * FROM rpt.FailedLogins ORDER BY EventTime DESC;') ; break }
                 '^GET /api/logins$'      { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.LoginActivity ORDER BY ServerName, SessionCount DESC;') ; break }
                 '^GET /api/staletables$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.StaleTables ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, SizeGB DESC;') ; break }

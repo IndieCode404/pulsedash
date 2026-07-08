@@ -294,6 +294,45 @@ WHERE sp.type IN ('S','U','G')       -- SQL login / Windows login / Windows grou
   AND sp.name NOT LIKE '##%';        -- skip internal certificate principals
 "@
 
+# File I/O latency - the classic storage-bottleneck finder (avg ms/IO per file).
+$Q_FILEIO = @"
+SELECT TOP (50)
+    DatabaseName = DB_NAME(vfs.database_id),
+    FileType     = mf.type_desc,
+    ReadLatencyMs  = CAST(CASE WHEN vfs.num_of_reads  = 0 THEN 0 ELSE 1.0*vfs.io_stall_read_ms /vfs.num_of_reads  END AS decimal(10,1)),
+    WriteLatencyMs = CAST(CASE WHEN vfs.num_of_writes = 0 THEN 0 ELSE 1.0*vfs.io_stall_write_ms/vfs.num_of_writes END AS decimal(10,1)),
+    AvgLatencyMs   = CAST(CASE WHEN (vfs.num_of_reads+vfs.num_of_writes)=0 THEN 0
+                               ELSE 1.0*vfs.io_stall/(vfs.num_of_reads+vfs.num_of_writes) END AS decimal(10,1)),
+    SizeMB       = vfs.size_on_disk_bytes/1048576,
+    TotalReadMB  = vfs.num_of_bytes_read/1048576,
+    TotalWriteMB = vfs.num_of_bytes_written/1048576
+FROM sys.dm_io_virtual_file_stats(NULL,NULL) vfs
+JOIN sys.master_files mf ON mf.database_id=vfs.database_id AND mf.file_id=vfs.file_id
+ORDER BY CASE WHEN vfs.num_of_reads =0 THEN 0 ELSE 1.0*vfs.io_stall_read_ms /vfs.num_of_reads  END
+       + CASE WHEN vfs.num_of_writes=0 THEN 0 ELSE 1.0*vfs.io_stall_write_ms/vfs.num_of_writes END DESC;
+"@
+
+# Autogrowth events from the default trace (best-effort; empty set if trace off).
+$Q_AUTOGROWTH = @"
+BEGIN TRY
+    DECLARE @tp nvarchar(260) = (SELECT path FROM sys.traces WHERE is_default = 1);
+    IF @tp IS NULL RAISERROR('no default trace', 11, 1);
+    SELECT EventTime    = CAST(StartTime AS datetime2(0)),
+           DatabaseName = DatabaseName,
+           FileType     = CASE EventClass WHEN 92 THEN 'ROWS' WHEN 93 THEN 'LOG' ELSE '?' END,
+           GrowthMB     = CAST(IntegerData * 8 / 1024.0 AS decimal(10,1)),
+           DurationMs   = Duration / 1000
+    FROM sys.fn_trace_gettable(@tp, DEFAULT)
+    WHERE EventClass IN (92,93) AND StartTime > DATEADD(HOUR,-24,GETDATE());
+END TRY
+BEGIN CATCH
+    SELECT CAST(NULL AS datetime2(0)) EventTime, CAST(NULL AS nvarchar(128)) DatabaseName,
+           CAST(NULL AS varchar(20)) FileType, CAST(NULL AS decimal(10,1)) GrowthMB,
+           CAST(NULL AS bigint) DurationMs
+    WHERE 1 = 0;
+END CATCH
+"@
+
 # Index health - missing indexes + never-used indexes (both cheap DMV reads).
 $Q_INDEX = @"
 SELECT TOP (25)
@@ -405,6 +444,13 @@ foreach ($inst in @($targets.Keys)) {
 
         $idx = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_INDEX) -ServerName $inst -CollectedAt $now
         [void](Write-BulkTable -ConnString $centralConn -Table $idx -Destination 'mon.IndexHealth')
+
+        # performance bottlenecks: file I/O latency + autogrowth events
+        $fio = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_FILEIO) -ServerName $inst -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $fio -Destination 'mon.FileIOStats')
+
+        $agr = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_AUTOGROWTH) -ServerName $inst -CollectedAt $now
+        [void](Write-BulkTable -ConnString $centralConn -Table $agr -Destination 'mon.AutoGrowth')
 
         Write-CollectionLog -CentralConn $centralConn -Collector 'MSSQL' -ServerName $inst -Status 'OK' `
             -RowsLoaded ($n1+$n2+$n3+$n4+$n5+$n6+$n7+$n8+$n9) `

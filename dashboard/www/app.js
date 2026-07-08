@@ -45,6 +45,7 @@ async function loadKpis() {
     { lbl: 'Job failures 24h', num: o.JobFailures24h, cls: o.JobFailures24h > 0 ? 'warn' : 'ok', tab: 'health' },
     { lbl: 'Blocked sessions', num: o.BlockedSessions, cls: o.BlockedSessions > 0 ? 'crit' : 'ok', tab: 'activity' },
     { lbl: 'Advisor findings', num: o.OpenFindings, cls: o.OpenFindings > 0 ? 'crit' : 'ok', tab: 'advisor' },
+    { lbl: 'I/O hotspots',   num: o.HighLatencyFiles, cls: o.HighLatencyFiles > 0 ? 'crit' : 'ok', tab: 'bottlenecks' },
     { lbl: 'Config warnings', num: o.ConfigWarnings, cls: o.ConfigWarnings > 0 ? 'warn' : 'ok', tab: 'config' },
     { lbl: 'Sysadmins',      num: o.Sysadmins, cls: o.Sysadmins > 5 ? 'warn' : 'ok', tab: 'access' },
     { lbl: 'No owner',       num: o.AppsWithoutOwner, cls: o.AppsWithoutOwner > 0 ? 'warn' : 'ok', tab: 'owners' },
@@ -257,6 +258,40 @@ async function loadAdvisor() {
         ${f.Evidence ? `<div class="fr"><span class="fl">Evidence</span><code>${esc(f.Evidence)}</code></div>` : ''}
       </div>
     </div>`).join('');
+}
+
+/* ---- bottlenecks tab (file I/O latency + wait deltas + autogrowth) ---- */
+async function loadBottlenecks() {
+  const [fio, wd, grow] = await Promise.all([
+    api('/api/fileio').catch(() => []), api('/api/waitdelta').catch(() => []),
+    api('/api/autogrowth').catch(() => [])]);
+  const latCell = v => v == null ? '—' : `${v} ms`;
+  $('#fileIoTable').innerHTML = table(fio, [
+    { h: 'Status',   k: 'Status', f: pill },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Database', k: 'DatabaseName' },
+    { h: 'File',     k: 'FileType' },
+    { h: 'Read latency',  k: 'ReadLatencyMs',  f: latCell },
+    { h: 'Write latency', k: 'WriteLatencyMs', f: latCell },
+    { h: 'Size', k: 'SizeMB', f: v => v == null ? '—' : (v / 1024).toFixed(1) + ' GB' },
+    { h: 'Read', k: 'TotalReadMB', f: v => v == null ? '—' : (v / 1024).toFixed(1) + ' GB' },
+    { h: 'Written', k: 'TotalWriteMB', f: v => v == null ? '—' : (v / 1024).toFixed(1) + ' GB' },
+  ]);
+  $('#waitDeltaTable').innerHTML = table(wd, [
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Wait type', k: 'WaitType' },
+    { h: 'Δ this cycle', k: 'DeltaMs', f: v => v == null ? '—' : (v >= 1000 ? (v / 1000).toFixed(1) + 's' : v + 'ms') },
+    { h: '% of window', k: 'WaitPct', f: v => v == null ? '—' : `<span class="bar${v >= 40 ? ' warn' : ''}"><i style="width:${Math.min(v,100)}%"></i></span>${v}%` },
+  ]);
+  $('#autoGrowthTable').innerHTML = table(grow, [
+    { h: 'Status',   k: 'Status', f: pill },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'When',     k: 'EventTime', f: fmtDt },
+    { h: 'Database', k: 'DatabaseName' },
+    { h: 'File',     k: 'FileType' },
+    { h: 'Grew by',  k: 'GrowthMB', f: v => v == null ? '—' : v + ' MB' },
+    { h: 'Stalled',  k: 'DurationMs', f: v => v == null ? '—' : (v >= 1000 ? (v / 1000).toFixed(1) + 's' : v + 'ms') },
+  ]);
 }
 
 /* ---- server & config tab (patch level + configuration drift) ---- */
@@ -562,7 +597,7 @@ async function saveServer() {
 function refreshActive() {
   const t = $('.tab.active').dataset.tab;
   ({ ag: loadAg, lag: loadLag, disk: loadDisk, growth: loadGrowth,
-     health: loadHealth, activity: loadActivity, advisor: loadAdvisor,
+     health: loadHealth, activity: loadActivity, advisor: loadAdvisor, bottlenecks: loadBottlenecks,
      config: loadConfig, access: loadAccess,
      cost: loadCost, alerts: loadAlerts, owners: loadOwners, servers: loadServers }[t])();
   loadKpis();

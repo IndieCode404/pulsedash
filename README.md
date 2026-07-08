@@ -68,6 +68,7 @@ Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 | `sql\16_connections.sql` | Adds connection fields to `cfg.Servers`: Host, Port, DatabaseName, AuthType, UserName, PasswordEnc (DPAPI blob) |
 | `sql\17_advisor.sql` | Advisor / findings engine: `mon.LockWait`, `mon.Finding`, `cfg.usp_Generate_Findings` (Redshift long-block rules), `rpt.Findings`; extends alert eval + purge |
 | `sql\18_server_audit.sql` | Patch/build (`mon.ServerInfo`), config drift (`mon.ConfigAudit`), access control (`mon.SecurityPrincipal`), index health (`mon.IndexHealth`); tempdb/VLF vitals; Overview v4 |
+| `sql\19_bottlenecks.sql` | Performance bottlenecks: file I/O latency (`mon.FileIOStats`), wait deltas (`rpt.WaitDelta`), autogrowth events (`mon.AutoGrowth`); Overview v5, purge v6 |
 | `sql\07`, `sql\11`, `sql\13` | Optional demo seeds: core → growth/cost/alerts → health/activity |
 | `redshift\redshift_metrics.sql` | Redshift SQL blocks: DISK, FRESHNESS, TABLE_SIZE, TABLE_HEALTH, ACTIVITY, RS_VITALS, TABLE_SCAN, SPECTRUM, RS_LOGINS, COST |
 | `deploy\Deploy-DBADash.ps1` | Builds / upgrades the central database (runs numbered SQL scripts in order) |
@@ -154,7 +155,7 @@ cd K:\DBA_Monitoring\DBADash\dashboard
 ```
 *(Prefer Power BI or SSRS? See `powerbi\` / `ssrs\` — same `rpt.*` views.)*
 
-The dashboard has **13 tabs** (with a **light/dark toggle** ☀/☾ in the top bar,
+The dashboard has **14 tabs** (with a **light/dark toggle** ☀/☾ in the top bar,
 remembered per browser):
 
 | Tab | What you see |
@@ -164,6 +165,7 @@ remembered per browser):
 | **Health** | Backup RPO, CHECKDB age, job failures (7 days), failed-login audit, session inventory |
 | **Activity** | Instance vitals (incl. tempdb + VLF), blocking/long-running queries, top waits, Redshift table maintenance, top queries by CPU, **index health** |
 | **Advisor** | Findings that investigate blocking and prescribe a fix + prevention (see below) |
+| **Bottlenecks** | **File I/O latency** per file, **wait deltas** (what changed this cycle), **autogrowth events** |
 | **Server & Config** | **Patch level** (build/SP/CU/edition/OS) per instance + **configuration drift** vs. best practice |
 | **Access Control** | Logins/groups by access type (Sysadmin/Elevated/…) with per-type counts + full principal list |
 | **Disk Forecast** | Days-to-full per volume + "buy N GB" sizing for 180-day headroom |
@@ -254,6 +256,16 @@ prevention text. Findings land in `mon.Finding` (deduped, auto-resolving like
 alerts), render on the **Advisor** tab, and CRIT ones flow into the email pipeline
 as `Category = 'Advisor'`. Adding the next advisor (MSSQL blocking, index health,
 config drift) is just another rule appended inside the same proc.
+
+**Bottlenecks** (`sql\19`) is the "what's slow right now" trio: **file I/O latency**
+from `sys.dm_io_virtual_file_stats` (avg ms/IO per data & log file — the classic
+storage-bottleneck finder, WARN ≥ 20 ms / CRIT ≥ 50 ms); **wait deltas**, computed
+as a *view* over the two most recent `mon.WaitStats` snapshots so you see the waits
+that accrued in the **last ~15 min** rather than cumulative-since-restart; and
+**autogrowth events** from the default trace (each auto-grow briefly freezes I/O —
+WARN if a single grow stalled ≥ 1 s). No new collector risk for waits (pure view);
+file I/O and autogrowth are cheap DMV/trace reads, the latter self-guarded so a
+disabled default trace can't break the cycle.
 
 **Server audit** (`sql\18`) captures three standing-state checks each cycle:
 **patch level** from `SERVERPROPERTY` + `sys.dm_os_host_info` (build, service pack,

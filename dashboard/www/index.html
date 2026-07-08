@@ -33,6 +33,7 @@
     <button class="tab" data-tab="health">Health</button>
     <button class="tab" data-tab="activity">Activity</button>
     <button class="tab" data-tab="advisor">Advisor</button>
+    <button class="tab" data-tab="bottlenecks">Bottlenecks</button>
     <button class="tab" data-tab="disk">Disk Forecast</button>
     <button class="tab" data-tab="growth">Growth</button>
     <button class="tab" data-tab="cost">Cost Anomaly</button>
@@ -88,6 +89,15 @@
     <section id="tab-advisor" class="panel">
       <div class="panel-head"><h2>Advisor <span class="muted">— investigates blocking &amp; prescribes how to prevent it</span></h2></div>
       <div id="advisorList"></div>
+    </section>
+
+    <section id="tab-bottlenecks" class="panel">
+      <div class="panel-head"><h2>File I/O Latency <span class="muted">— avg ms per I/O per file (&lt;10 good · 20-50 concerning · &gt;50 bad)</span></h2></div>
+      <div id="fileIoTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Wait Deltas <span class="muted">— waits accrued since the last collection (what changed, not cumulative)</span></h2></div>
+      <div id="waitDeltaTable" class="tablewrap"></div>
+      <div class="panel-head sub"><h2>Autogrowth Events <span class="muted">— file auto-grows in the last 7 days (each one stalls I/O)</span></h2></div>
+      <div id="autoGrowthTable" class="tablewrap"></div>
     </section>
 
     <section id="tab-config" class="panel">
