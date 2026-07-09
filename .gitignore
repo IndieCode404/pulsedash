@@ -1,6 +1,9 @@
 # Local config contains instance names / credentials - NEVER commit it.
 deploy/config/dbadash.json
 
+# build output from deploy\Package-DBADash.ps1
+dist/
+
 # OS / editor noise
 Thumbs.db
 Desktop.ini

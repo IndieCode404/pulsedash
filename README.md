@@ -85,6 +85,39 @@ Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 
 ---
 
+## Getting it onto a client box (no repo, no git)
+
+You don't copy the repo or clone git onto the client. Build a **single runtime-only
+zip** and hand that over:
+
+```powershell
+# on your build machine (where the repo lives)
+cd K:\DBA_Monitoring\DBADash
+.\deploy\Package-DBADash.ps1          # -> dist\DBADash-<date>-<sha>.zip  (~95 KB)
+```
+The zip holds only what the box needs — the SQL deploy scripts, the PowerShell
+collectors/deploy/dashboard, the `www\` assets, the Redshift metrics, the Agent job
+script, and the config **template**. No `.git`, no Node demo server, no build noise.
+`-NoDemo` drops the demo seeds; `-IncludeBI` adds the Power BI / SSRS templates.
+
+Prefer not to run the packager? Any of these also work:
+- **git archive** — one clean command, no history:
+  `git archive --format=zip -o DBADash.zip HEAD deploy sql redshift agent dashboard/Start-Dashboard.ps1 dashboard/www`
+- **GitHub → Code → Download ZIP** — grabs everything (incl. demo/docs) but no git.
+- **Publish a release** so the box pulls one URL:
+  `gh release create v1.0 dist\DBADash-*.zip`, then on the box
+  `Invoke-WebRequest <asset-url> -OutFile DBADash.zip`.
+
+### On the client box
+```powershell
+Expand-Archive .\DBADash-*.zip -DestinationPath C:\DBADash
+Get-ChildItem C:\DBADash -Recurse | Unblock-File      # clear the "downloaded from internet" flag
+Set-ExecutionPolicy -Scope Process RemoteSigned        # if scripts are blocked this session
+cd C:\DBADash
+```
+Everything is path-relative, so `C:\DBADash` (or any folder) is fine. Now follow
+**Setup** below — configure → deploy → collect → schedule → dashboard.
+
 ## Setup (about 15 minutes)
 
 ### 0. Prerequisites
