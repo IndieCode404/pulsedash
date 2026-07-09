@@ -130,21 +130,24 @@ Everything is path-relative, so `C:\DBADash` (or any folder) is fine. Now follow
 - The collector account needs **VIEW SERVER STATE** + **db_datareader on msdb** on
   every MSSQL target, and **db_datawriter** on `DBADash`.
 
-### 1. Configure
-```powershell
-cd K:\DBA_Monitoring\DBADash\deploy\config
-copy dbadash.example.json dbadash.json
-notepad dbadash.json   # set central instance, CMS group, Redshift cluster(s)
-```
-Tip: keep Redshift passwords out of the file — set `$env:DBADASH_RS_PWD` instead,
-or add the cluster via the dashboard **Servers** tab and let DPAPI handle it.
-
-### 2. Build the central database
+### 1. Build the central database (interactive first run)
 ```powershell
 cd K:\DBA_Monitoring\DBADash\deploy
-.\Deploy-DBADash.ps1                 # schema only
-.\Deploy-DBADash.ps1 -WithDemoData   # OR: schema + demo data to see it working first
+.\Deploy-DBADash.ps1                  # asks for the instance + auth on first run
+.\Deploy-DBADash.ps1 -WithDemoData    # OR: also load demo data to see it working first
 ```
+On a fresh box it creates `config\dbadash.json` from the template and **prompts** for:
+- **SQL Server instance** where the `DBADash` database will be created (e.g. `SQLMON01` or `HOST\SQLEXPRESS`)
+- **Authentication** — Windows (recommended, no password) or a SQL login (asks user + password)
+
+It saves those answers back to `dbadash.json` so the collector and dashboard reuse
+them. To skip the prompts, pass them: `.\Deploy-DBADash.ps1 -Instance SQLMON01`
+(add `-User dbadash -Password ****` for SQL auth), or `-NonInteractive` for automation.
+
+### 2. (Optional) Finish the config
+Edit `deploy\config\dbadash.json` to add your **CMS group** and **Redshift cluster(s)**
+— the collector reads them next run. Keep Redshift passwords out of the file: set
+`$env:DBADASH_RS_PWD`, or add the cluster via the dashboard **Servers** tab (DPAPI).
 
 ### 3. Run a collection (once, by hand)
 ```powershell
