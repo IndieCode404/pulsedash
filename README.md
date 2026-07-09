@@ -55,7 +55,6 @@ Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 |------|---------|
 | `sql\01_create_database.sql` | Creates the DBADash DB with mon/cfg/rpt schemas |
 | `sql\02_tables.sql` | Core tables: Servers, AGSyncStatus, DataLag, DiskUsage, DiskForecast, AppOwners, CollectionLog |
-| `sql\03_collect_mssql.sql` | **Target-side** MSSQL collection queries (run by CMS fan-out; also runnable by hand in SSMS) |
 | `sql\04_procs_forecast.sql` | Disk forecast (least-squares) + purge stored procedures |
 | `sql\05_views_dashboard.sql` | Core `rpt.*` views consumed by dashboard + Power BI |
 | `sql\06_appowners_crud.sql` | App owner CRUD (`cfg.usp_AppOwner_Upsert`, `cfg.usp_AppOwner_Delete`) |

@@ -20,7 +20,8 @@ $cfg         = Get-DbaDashConfig -Path $ConfigPath
 $centralConn = Get-SqlConnString -Instance $cfg.central.sqlInstance -Database $cfg.central.database `
                                  -User $cfg.central.user -Password $cfg.central.password
 
-# ---- The three target-side queries (kept in sync with sql\03_collect_mssql.sql) ----
+# ---- Target-side collection queries (run against each MSSQL instance) ----------
+#      These are the authoritative definitions; there is no separate copy to sync.
 $Q_AGSYNC = @"
 SELECT AGName=ag.name, DatabaseName=DB_NAME(drs.database_id), ReplicaServer=ar.replica_server_name,
        IsPrimary=CONVERT(bit,drs.is_primary_replica),

@@ -75,7 +75,7 @@ try {
           "Check the instance name, that SQL Server is reachable, and that this login can CREATE DATABASE."
 }
 
-# --- run the numbered deploy scripts. 03_collect_mssql.sql is TARGET-side ------
+# --- run the numbered deploy scripts (target-side collection lives in the collector) ---
 $sqlDir  = Join-Path (Split-Path $PSScriptRoot -Parent) 'sql'
 $scripts = @(
     '01_create_database.sql',   # creates DB (connects via master)
