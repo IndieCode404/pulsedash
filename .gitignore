@@ -4,6 +4,9 @@ deploy/config/dbadash.json
 # build output from deploy\Package-DBADash.ps1
 dist/
 
+# local preview / editor tooling (not part of the product)
+.claude/
+
 # OS / editor noise
 Thumbs.db
 Desktop.ini
