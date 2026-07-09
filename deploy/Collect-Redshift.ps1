@@ -36,7 +36,11 @@ $qLock  = Get-SqlBlock -Path $metricsFile -Name 'LOCKS'
 $qCostQ = Get-SqlBlock -Path $metricsFile -Name 'COSTLY_QUERIES'
 
 function Get-RedshiftOdbcConnString($rs) {
-    if ($rs.dsn) { return "DSN=$($rs.dsn);" }
+    if ($rs.dsn) {
+        $d = New-Object System.Data.Odbc.OdbcConnectionStringBuilder
+        $d.Dsn = [string]$rs.dsn
+        return $d.ConnectionString
+    }
     $pwd = if ($env:DBADASH_RS_PWD) { $env:DBADASH_RS_PWD } else { $rs.password }
     # Prefer the Amazon driver; fall back to the PostgreSQL Unicode driver if the
     # first isn't installed. Both accept this host/port/database/uid/pwd shape.
@@ -44,7 +48,16 @@ function Get-RedshiftOdbcConnString($rs) {
     $installed = (Get-OdbcDriver -ErrorAction SilentlyContinue | Select-Object -Expand Name)
     $driver = ($drivers | Where-Object { $installed -contains $_ } | Select-Object -First 1)
     if (-not $driver) { $driver = $drivers[0] }   # try anyway; error will be logged
-    return "Driver={$driver};Server=$($rs.host);Port=$($rs.port);Database=$($rs.database);Uid=$($rs.user);Pwd=$pwd;SSLMode=require;"
+    # Build via OdbcConnectionStringBuilder so host/uid/pwd are safely quoted.
+    $b = New-Object System.Data.Odbc.OdbcConnectionStringBuilder
+    $b.Driver     = $driver
+    $b['Server']  = [string]$rs.host
+    $b['Port']    = [string]$rs.port
+    $b['Database'] = [string]$rs.database
+    $b['Uid']     = [string]$rs.user
+    $b['Pwd']     = [string]$pwd
+    $b['SSLMode'] = 'require'
+    return $b.ConnectionString
 }
 
 # Merge cluster list: config file + clusters saved via the dashboard "Servers"

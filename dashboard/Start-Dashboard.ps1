@@ -141,17 +141,27 @@ function Test-ServerConnection($body) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
         if ($body.Platform -eq 'Redshift') {
-            $pwd = [string]$body.Password
-            $cs = "Driver={Amazon Redshift ODBC Driver (x64)};Server=$($body.Host);Port=$($body.Port);Database=$($body.DatabaseName);Uid=$($body.UserName);Pwd=$pwd;SSLMode=require;"
-            $oc = New-Object System.Data.Odbc.OdbcConnection $cs
+            # OdbcConnectionStringBuilder safely quotes host/uid/pwd (no injection).
+            $b = New-Object System.Data.Odbc.OdbcConnectionStringBuilder
+            $b.Driver      = 'Amazon Redshift ODBC Driver (x64)'
+            $b['Server']   = [string]$body.Host
+            $b['Port']     = [string]$body.Port
+            $b['Database'] = [string]$body.DatabaseName
+            $b['Uid']      = [string]$body.UserName
+            $b['Pwd']      = [string]$body.Password
+            $b['SSLMode']  = 'require'
+            $oc = New-Object System.Data.Odbc.OdbcConnection $b.ConnectionString
             try { $oc.ConnectionTimeout = 10; $oc.Open() } finally { $oc.Dispose() }
         } else {
-            $cs = if ($body.AuthType -eq 'sql') {
-                "Server=$($body.ServerName);Database=master;TrustServerCertificate=True;Connect Timeout=10;User ID=$($body.UserName);Password=$([string]$body.Password);"
-            } else {
-                "Server=$($body.ServerName);Database=master;TrustServerCertificate=True;Connect Timeout=10;Integrated Security=SSPI;"
-            }
-            $sc = New-Object System.Data.SqlClient.SqlConnection $cs
+            $b = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+            $b.DataSource             = [string]$body.ServerName
+            $b.InitialCatalog         = 'master'
+            $b.TrustServerCertificate = $true
+            $b.ConnectTimeout         = 10
+            $b.ApplicationName        = 'DBADash-Test'
+            if ($body.AuthType -eq 'sql') { $b.UserID = [string]$body.UserName; $b.Password = [string]$body.Password }
+            else { $b.IntegratedSecurity = $true }
+            $sc = New-Object System.Data.SqlClient.SqlConnection $b.ConnectionString
             try { $sc.Open() } finally { $sc.Dispose() }
         }
         return @{ ok = $true; message = "Connected in $($sw.ElapsedMilliseconds) ms" }
@@ -204,6 +214,22 @@ try {
         $ctx  = $listener.GetContext()
         $path = $ctx.Request.Url.AbsolutePath.TrimEnd('/')
         $verb = $ctx.Request.HttpMethod
+
+        # CSRF guard: state-changing (POST) requests must carry our custom header -
+        # a browser cannot set it on a cross-site "simple" request without a CORS
+        # preflight, which we never approve - and must not arrive from a foreign
+        # Origin. Read-only GETs are unaffected. app.js sends X-DBADash on every call.
+        if ($verb -eq 'POST') {
+            $origin = $ctx.Request.Headers['Origin']
+            $okHdr  = -not [string]::IsNullOrEmpty($ctx.Request.Headers['X-DBADash'])
+            $okOrig = [string]::IsNullOrEmpty($origin) -or
+                      ($origin -match '^https?://(localhost|127\.0\.0\.1)(:\d+)?$')
+            if (-not $okHdr -or -not $okOrig) {
+                Send-Json $ctx @{ error = 'forbidden' } 403
+                continue
+            }
+        }
+
         try {
             switch -Regex ("$verb $path") {
                 '^GET /api/overview$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.Overview;') ; break }
@@ -266,10 +292,12 @@ try {
                     Upsert-Owner $body; Send-Json $ctx @{ ok = $true }; break
                 }
                 default {
-                    # static file
-                    $rel = if ($path -eq '') { 'index.html' } else { $path.TrimStart('/') }
-                    $file = Join-Path $www $rel
-                    if (Test-Path $file) {
+                    # static file - resolve and CONTAIN under the web root so a
+                    # crafted path (encoded traversal, etc.) can't escape www\.
+                    $rel  = if ($path -eq '') { 'index.html' } else { $path.TrimStart('/') }
+                    $root = [IO.Path]::GetFullPath($www).TrimEnd('\') + '\'
+                    $file = [IO.Path]::GetFullPath((Join-Path $www $rel))
+                    if ($file.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path $file -PathType Leaf)) {
                         $ext = [IO.Path]::GetExtension($file)
                         $ct  = if ($types.ContainsKey($ext)) { $types[$ext] } else { 'application/octet-stream' }
                         $bytes = [IO.File]::ReadAllBytes($file)

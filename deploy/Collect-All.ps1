@@ -87,6 +87,17 @@ WHERE h.run_status=0 AND h.step_id>0
 "@
 
 $Q_VITALS = @"
+-- Worst VLF count needs sys.dm_db_log_info (2016 SP2+); read it in isolated
+-- dynamic SQL so an older target degrades to "no VLF metric" instead of failing.
+DECLARE @maxvlf float = NULL;
+BEGIN TRY
+    EXEC sys.sp_executesql
+        N'SELECT @m = ISNULL(MAX(cnt),0)
+          FROM (SELECT CAST(COUNT(*) AS float) cnt FROM sys.databases d
+                CROSS APPLY sys.dm_db_log_info(d.database_id) GROUP BY d.database_id) z',
+        N'@m float OUTPUT', @m = @maxvlf OUTPUT;
+END TRY BEGIN CATCH SET @maxvlf = NULL; END CATCH;
+
 SELECT MetricName='page_life_expectancy', MetricValue=CAST(cntr_value AS float), Detail=CAST(NULL AS nvarchar(256))
 FROM sys.dm_os_performance_counters
 WHERE counter_name='Page life expectancy' AND object_name LIKE '%:Buffer Manager%'
@@ -130,11 +141,8 @@ SELECT 'tempdb_version_store_gb',
        (SELECT CAST(SUM(version_store_reserved_page_count) * 8 / 1048576.0 AS float)
         FROM tempdb.sys.dm_db_file_space_usage), NULL
 UNION ALL
--- worst VLF count across databases (needs SQL 2016 SP2+/2017+); >1000 slows log ops
-SELECT 'max_vlf_count',
-       (SELECT ISNULL(MAX(cnt),0) FROM
-          (SELECT CAST(COUNT(*) AS float) cnt FROM sys.databases d
-           CROSS APPLY sys.dm_db_log_info(d.database_id) GROUP BY d.database_id) z), NULL;
+-- worst VLF count across databases (only emitted where dm_db_log_info exists)
+SELECT 'max_vlf_count', @maxvlf, NULL WHERE @maxvlf IS NOT NULL;
 "@
 
 $Q_ACTIVITY = @"
@@ -199,16 +207,29 @@ WHERE is_user_process=1
 GROUP BY login_name, host_name, LEFT(program_name,160);
 "@
 
-# Patch / build / version - "what SP + CU am I on" (SERVERPROPERTY + host info)
+# Patch / build / version - "what SP + CU am I on" (SERVERPROPERTY + host info).
+# Min supported target: SQL 2012. sys.dm_os_host_info is 2017+, so it is read via
+# isolated dynamic SQL wrapped in TRY/CATCH - on older targets host info comes
+# back NULL instead of compile-failing (which would abort the whole cycle).
 $Q_SERVERINFO = @"
+DECLARE @hostPlatform nvarchar(40) = NULL, @osVersion nvarchar(120) = NULL;
+BEGIN TRY
+    EXEC sys.sp_executesql
+        N'SELECT @hp = host_platform,
+                 @os = LEFT(host_distribution + '' '' + host_release, 120)
+          FROM sys.dm_os_host_info',
+        N'@hp nvarchar(40) OUTPUT, @os nvarchar(120) OUTPUT',
+        @hp = @hostPlatform OUTPUT, @os = @osVersion OUTPUT;
+END TRY BEGIN CATCH END CATCH;
+
 SELECT
     ProductVersion     = CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(50)),
     ProductLevel       = CAST(SERVERPROPERTY('ProductLevel') AS nvarchar(20)),
     ProductUpdateLevel = CAST(SERVERPROPERTY('ProductUpdateLevel') AS nvarchar(20)),
     Edition            = CAST(SERVERPROPERTY('Edition') AS nvarchar(80)),
     ProductMajor       = CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(40)),
-    HostPlatform       = (SELECT TOP (1) host_platform FROM sys.dm_os_host_info),
-    OSVersion          = (SELECT TOP (1) LEFT(host_distribution + ' ' + host_release, 120) FROM sys.dm_os_host_info),
+    HostPlatform       = @hostPlatform,
+    OSVersion          = @osVersion,
     IsClustered        = CAST(SERVERPROPERTY('IsClustered') AS bit),
     IsHadrEnabled      = CAST(SERVERPROPERTY('IsHadrEnabled') AS bit),
     StartTime          = (SELECT sqlserver_start_time FROM sys.dm_os_sys_info),

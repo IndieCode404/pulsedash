@@ -36,12 +36,22 @@ function Get-DbaDashConfig {
 }
 
 # Build a SQL Server connection string. Empty user => Windows/Integrated auth.
+# Uses SqlConnectionStringBuilder so instance/user/password values are safely
+# encoded (no connection-string injection via a stray ';' or '=').
+# NOTE: TrustServerCertificate is on - the collector trusts its targets but does
+# NOT validate the TLS cert. On an untrusted network, set it to $false and
+# install the target certs so the link can't be MITM'd.
 function Get-SqlConnString {
     param([string]$Instance, [string]$Database = 'master', [string]$User, [string]$Password)
-    $cs = "Server=$Instance;Database=$Database;TrustServerCertificate=True;Connect Timeout=15;Application Name=DBADash;"
-    if ([string]::IsNullOrWhiteSpace($User)) { $cs += "Integrated Security=SSPI;" }
-    else { $cs += "User ID=$User;Password=$Password;" }
-    return $cs
+    $b = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+    $b.DataSource              = $Instance
+    $b.InitialCatalog          = $Database
+    $b.TrustServerCertificate  = $true
+    $b.ConnectTimeout          = 15
+    $b.ApplicationName         = 'DBADash'
+    if ([string]::IsNullOrWhiteSpace($User)) { $b.IntegratedSecurity = $true }
+    else { $b.UserID = $User; $b.Password = $Password }
+    return $b.ConnectionString
 }
 
 # Run a query against SQL Server and return a DataTable (empty table if no rows).

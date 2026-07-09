@@ -3,7 +3,9 @@
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const api = (p, opt) => fetch(p, opt).then(r => r.json());
+// X-DBADash marks the request as same-origin app traffic; the server rejects any
+// POST without it (CSRF guard). A cross-site page can't set it without a preflight.
+const api = (p, opt = {}) => fetch(p, { ...opt, headers: { 'X-DBADash': '1', ...(opt.headers || {}) } }).then(r => r.json());
 const esc = s => (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 const pill = s => `<span class="pill ${s}">${s}</span>`;
 const num  = n => (n == null ? '—' : Number(n).toLocaleString());
@@ -203,7 +205,7 @@ async function loadActivity() {
     { h: 'Status',  k: 'Status', f: pill },
     { h: 'Platform',k: 'Platform' },
     { h: 'Server',  k: 'ServerName' },
-    { h: 'Metric',  k: 'MetricName', f: v => VITAL_LABELS[v] || v },
+    { h: 'Metric',  k: 'MetricName', f: v => VITAL_LABELS[v] || esc(v) },
     { h: 'Value',   k: 'MetricValue', f: num },
   ]);
   $('#activityTable').innerHTML = table(
@@ -337,8 +339,8 @@ async function loadAccess() {
         return `<span class="pill ${cls}">${esc(v)}</span>`; } },
     { h: 'Server',   k: 'ServerName' },
     { h: 'Principal',k: 'PrincipalName' },
-    { h: 'Type',     k: 'PrincipalType', f: v => (v || '').replace('_', ' ').toLowerCase() },
-    { h: 'Server roles', k: 'ServerRoles', f: v => v || '—' },
+    { h: 'Type',     k: 'PrincipalType', f: v => esc((v || '').replace('_', ' ').toLowerCase()) },
+    { h: 'Server roles', k: 'ServerRoles', f: v => v ? esc(v) : '—' },
     { h: 'Disabled', k: 'IsDisabled', f: v => v ? '<b>yes</b>' : 'no' },
     { h: 'Created',  k: 'CreateDate', f: v => v ? new Date(v + 'Z').toLocaleDateString() : '—' },
   ]);

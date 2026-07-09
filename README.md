@@ -333,9 +333,26 @@ servers you want it to monitor.)
 - Passwords stored via the Servers tab are encrypted with **Windows DPAPI
   (LocalMachine scope)** in `cfg.Servers.PasswordEnc`. The `rpt.Servers` view
   exposes only a `HasPassword BIT` — the encrypted blob never leaves the server.
-- The dashboard HTTP server binds to `localhost` only. To share it with a team,
-  front it with a reverse proxy that adds authentication (e.g. Nginx basic auth or
-  IIS with Windows auth).
+  *Caveat:* LocalMachine scope means **any code running on the monitoring box can
+  decrypt** the stored target passwords. Treat the box as sensitive: restrict who
+  can log on to it, the same way you would a jump host.
+- The dashboard HTTP server binds to `localhost` only, and **all connection strings
+  are built with `SqlConnectionStringBuilder` / `OdbcConnectionStringBuilder`** so
+  server/user/password values can't inject connection-string attributes.
+- **CSRF:** state-changing (`POST`) API calls require an `X-DBADash` header and a
+  same-origin `Origin`, so a malicious page you happen to visit can't drive the
+  local API. The static file server is contained under `www\` (no path traversal).
+- **TLS:** the collector uses `TrustServerCertificate=True` (SQL) / `SSLMode=require`
+  (Redshift) — traffic is encrypted but the certificate is **not CA-validated**. On
+  an untrusted network, install the target certs and flip `TrustServerCertificate`
+  off in `Common.ps1` to prevent MITM.
+- To share the dashboard with a team, front it with a reverse proxy that adds
+  authentication (e.g. Nginx basic auth or IIS with Windows auth) + TLS — it has
+  **no built-in auth** by design.
+- **Minimum target version:** SQL Server 2012. Patch/OS info (`sys.dm_os_host_info`,
+  2017+) and VLF counts (`sys.dm_db_log_info`, 2016 SP2+) are read via isolated,
+  self-guarding dynamic SQL, so older targets simply omit those fields instead of
+  failing the collection cycle.
 
 ## Tuning
 - Collection frequency: `@IntervalMinutes` in `agent\Create-AgentJobs.sql`.
