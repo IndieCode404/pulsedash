@@ -11,8 +11,9 @@ before adding a UI, a report, or an integration.
                          │                                          │
                          ▼                                          │
    ┌───────────────┬───────────────┬───────────────┬───────────────┤
-   │ dashboard\www │    ssrs\       │   powerbi\    │  (AI copilot) │  ← faces
-   │ HTML console  │ RDL reports    │  PBIX         │   future      │
+   │ dashboard\www │   powerbi\    │    ssrs\       │  (AI copilot) │  ← faces
+   │ HTML console  │    PBIX       │  optional      │   future      │
+   │  (primary)    │               │                │               │
    └───────────────┴───────────────┴───────────────┴───────────────┘
 ```
 
@@ -22,9 +23,9 @@ collection.** The `rpt.*` views are the stable contract between the engine and t
 presentation. Obey this and all faces stay in sync automatically; break it and you
 get drift and duplicated logic.
 
-- ✅ HTML dashboard → `SELECT * FROM rpt.Overview`, `rpt.EstateHealth`, …
-- ✅ SSRS report → same `rpt.*` views (see `ssrs\BUILD.md`)
+- ✅ HTML dashboard (the primary face) → `SELECT * FROM rpt.Overview`, `rpt.EstateHealth`, …
 - ✅ Power BI → same `rpt.*` views
+- ✅ SSRS (optional) → same `rpt.*` views (see `ssrs\README.md`)
 - ❌ A face that queries `mon.WaitStats` directly, or runs its own collector
 
 ## Where logic lives

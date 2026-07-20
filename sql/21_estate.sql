@@ -1,17 +1,15 @@
 /*==============================================================================
-  DBADash  |  SSRS - rpt.EstateHealth  (the landing matrix source)
+  DBADash  |  21 - rpt.EstateHealth  (estate-grid rollup)
   ----------------------------------------------------------------------------
   ONE ROW PER SERVER, one column per domain, each holding a worst-of RAG status
-  (OK / WARN / CRIT / NA). This "wide" shape is what an SSRS tablix wants: fixed
-  columns, one textbox per domain, RAG via a BackgroundColor expression - far
-  simpler and more robust to author than a dynamic matrix column-group.
+  (OK / WARN / CRIT / NA), plus an overall status/rank. This is the source for
+  the dashboard's "estate grid" landing view - the scannable server × domain
+  overview for 50+ instances - and works for any face (HTML / Power BI).
 
-  It reuses the existing DBADash rpt.* views, so there is no new collection - the
-  SSRS report is a second face on the same data the HTML dashboard reads.
-
-  Deploy AFTER the main DBADash schema (needs rpt.BackupHealth, rpt.DiskForecast,
-  rpt.AGSyncStatus, rpt.JobFailures, rpt.IndexHealth, rpt.ConfigAudit,
-  rpt.InstanceVitals, rpt.DataLag, rpt.TableHealth).
+  Pure rollup over the existing rpt.* views: no new collection. Loads last so all
+  the domain views it reads (rpt.BackupHealth, rpt.DiskForecast, rpt.AGSyncStatus,
+  rpt.JobFailures, rpt.IndexHealth, rpt.ConfigAudit, rpt.InstanceVitals,
+  rpt.DataLag, rpt.TableHealth) already exist.
 ==============================================================================*/
 USE [DBADash];
 GO
@@ -95,5 +93,5 @@ SELECT
 FROM est;
 GO
 
-PRINT 'rpt.EstateHealth created - point the SSRS landing tablix at this view.';
+PRINT 'rpt.EstateHealth created (21) - estate-grid rollup for the dashboard landing view.';
 GO

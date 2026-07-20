@@ -1,20 +1,7 @@
 # SSRS on top of DBADash
 
 For a SQL-Server-native, paginated / emailable report, build SSRS reports
-against the same `rpt.*` views. This suits scheduled PDF snapshots to management,
-and is the **governance-friendly path** — already licensed, AD-secured, audited.
-
-## The estate console, SSRS edition
-The full build (landing matrix → per-server drill-through → morning email) is
-specified end-to-end in **[BUILD.md](BUILD.md)**. Start here:
-
-| File | What it is |
-|------|-----------|
-| **[sql/rpt_EstateHealth.sql](sql/rpt_EstateHealth.sql)** | The wide view that backs the landing matrix — one row per server, a worst-of RAG status per domain. Deploy after the DBADash schema. |
-| **[01_EstateHealth.rdl](01_EstateHealth.rdl)** | Starter landing report (server × domain matrix, RAG cells, drill-through on the server name). Open in Report Builder, repoint the `DBADash` data source, preview. *Scaffold — BUILD.md is authoritative.* |
-| **[BUILD.md](BUILD.md)** | Datasets, RAG expressions, per-domain drill-through reports, and the data-driven morning-email subscription. |
-
-The quick single-report ideas below still apply for one-off reports.
+against the same `rpt.*` views. This suits scheduled PDF snapshots to management.
 
 ## Data source
 Shared data source `DBADash`:

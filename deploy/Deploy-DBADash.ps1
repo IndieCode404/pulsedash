@@ -93,7 +93,8 @@ $scripts = @(
     '17_advisor.sql',
     '18_server_audit.sql',
     '19_bottlenecks.sql',
-    '20_query_cost.sql'
+    '20_query_cost.sql',
+    '21_estate.sql'
 )
 if ($WithDemoData) { $scripts += '07_seed_demo.sql','11_seed_growth_cost.sql','13_seed_health.sql' }
 
