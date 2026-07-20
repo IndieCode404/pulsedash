@@ -24,6 +24,10 @@ It answers the questions clients actually ask on day one:
 
 Runs on **SQL Server + PowerShell only**. No Node, no IIS, no licenses.
 
+> **One engine, many faces.** DBADash is the collection engine + `rpt.*` view
+> contract; the HTML dashboard, **SSRS** (`ssrs/`), and Power BI are swappable
+> presentations of the same data — see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ---
 
 ## Architecture

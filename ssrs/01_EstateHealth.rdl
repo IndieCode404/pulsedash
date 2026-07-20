@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DBADash | 01_EstateHealth.rdl  -  STARTER SCAFFOLD for SSRS 2016+ / Power BI Report Server.
+  Landing "Estate Health" matrix: one row per server, RAG cell per domain, drill-through on the
+  server name to a "ServerDetail" report.  Open in Report Builder, repoint the shared data source
+  "DBADash", and preview.  BUILD.md is the authoritative spec if your SSRS version flags anything.
+-->
+<Report xmlns="http://schemas.microsoft.com/sqlserver/reporting/2016/01/reportdefinition"
+        xmlns:rd="http://schemas.microsoft.com/SQLServer/reporting/reportdesigner">
+  <AutoRefresh>0</AutoRefresh>
+  <DataSources>
+    <DataSource Name="DBADash">
+      <DataSourceReference>DBADash</DataSourceReference>
+      <rd:SecurityType>None</rd:SecurityType>
+      <rd:DataSourceID>a1b2c3d4-0000-0000-0000-000000000001</rd:DataSourceID>
+    </DataSource>
+  </DataSources>
+  <DataSets>
+    <DataSet Name="ds_Estate">
+      <Query>
+        <DataSourceName>DBADash</DataSourceName>
+        <CommandText>SELECT ServerName, Environment, Platform, [Backup], [Disk], [Jobs], [HA], [Index], [Config], [Perf], [Data], OverallStatus, OverallRank FROM rpt.EstateHealth WHERE (@Environment IS NULL OR Environment IN (@Environment)) ORDER BY OverallRank, ServerName</CommandText>
+        <QueryParameters>
+          <QueryParameter Name="@Environment">
+            <Value>=Parameters!Environment.Value</Value>
+          </QueryParameter>
+        </QueryParameters>
+      </Query>
+      <Fields>
+        <Field Name="ServerName"><DataField>ServerName</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Environment"><DataField>Environment</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Platform"><DataField>Platform</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Backup"><DataField>Backup</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Disk"><DataField>Disk</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Jobs"><DataField>Jobs</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="HA"><DataField>HA</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Index"><DataField>Index</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Config"><DataField>Config</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Perf"><DataField>Perf</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="Data"><DataField>Data</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="OverallStatus"><DataField>OverallStatus</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+        <Field Name="OverallRank"><DataField>OverallRank</DataField><rd:TypeName>System.Int32</rd:TypeName></Field>
+      </Fields>
+    </DataSet>
+    <DataSet Name="ds_Env">
+      <Query>
+        <DataSourceName>DBADash</DataSourceName>
+        <CommandText>SELECT DISTINCT Environment FROM cfg.Servers WHERE IsActive = 1 ORDER BY Environment</CommandText>
+      </Query>
+      <Fields>
+        <Field Name="Environment"><DataField>Environment</DataField><rd:TypeName>System.String</rd:TypeName></Field>
+      </Fields>
+    </DataSet>
+  </DataSets>
+  <ReportSections>
+    <ReportSection>
+      <Body>
+        <ReportItems>
+          <Textbox Name="Title">
+            <CanGrow>true</CanGrow>
+            <Paragraphs><Paragraph><TextRuns><TextRun>
+              <Value>DBADash — Estate Health</Value>
+              <Style><FontSize>16pt</FontSize><FontWeight>Bold</FontWeight></Style>
+            </TextRun></TextRuns></Paragraph></Paragraphs>
+            <rd:DefaultName>Title</rd:DefaultName>
+            <Top>0in</Top><Left>0in</Left><Height>0.3in</Height><Width>9.5in</Width>
+            <Style><PaddingLeft>2pt</PaddingLeft><PaddingTop>2pt</PaddingTop></Style>
+          </Textbox>
+          <Textbox Name="Subtitle">
+            <CanGrow>true</CanGrow>
+            <Paragraphs><Paragraph><TextRuns><TextRun>
+              <Value>=&quot;Generated &quot; &amp; Format(Now(),&quot;yyyy-MM-dd HH:mm&quot;) &amp; "  ·  worst-of status per domain"</Value>
+              <Style><FontSize>9pt</FontSize><Color>#74879F</Color></Style>
+            </TextRun></TextRuns></Paragraph></Paragraphs>
+            <rd:DefaultName>Subtitle</rd:DefaultName>
+            <Top>0.32in</Top><Left>0in</Left><Height>0.22in</Height><Width>9.5in</Width>
+            <Style><PaddingLeft>2pt</PaddingLeft></Style>
+          </Textbox>
+          <Tablix Name="EstateMatrix">
+            <TablixBody>
+              <TablixColumns>
+                <TablixColumn><Width>2in</Width></TablixColumn>
+                <TablixColumn><Width>0.7in</Width></TablixColumn>
+                <TablixColumn><Width>0.85in</Width></TablixColumn>
+                <TablixColumn><Width>0.85in</Width></TablixColumn>
+                <TablixColumn><Width>0.85in</Width></TablixColumn>
+                <TablixColumn><Width>0.85in</Width></TablixColumn>
+                <TablixColumn><Width>0.85in</Width></TablixColumn>
+                <TablixColumn><Width>0.85in</Width></TablixColumn>
+                <TablixColumn><Width>0.85in</Width></TablixColumn>
+                <TablixColumn><Width>0.85in</Width></TablixColumn>
+              </TablixColumns>
+              <TablixRows>
+                <TablixRow>
+                  <Height>0.28in</Height>
+                  <TablixCells>
+                    <TablixCell><CellContents><Textbox Name="hServer"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Server</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hServer</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hEnv"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Env</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hEnv</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hBackup"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Backup</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hBackup</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hDisk"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Disk</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hDisk</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hJobs"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Jobs</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hJobs</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hHA"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>HA</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hHA</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hIndex"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Index</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hIndex</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hConfig"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Config</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hConfig</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hPerf"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Perf</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hPerf</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="hData"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>Data</Value><Style><FontWeight>Bold</FontWeight><Color>White</Color></Style></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>hData</rd:DefaultName><Style><BackgroundColor>#42536A</BackgroundColor><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign></Style></Textbox></CellContents></TablixCell>
+                  </TablixCells>
+                </TablixRow>
+                <TablixRow>
+                  <Height>0.26in</Height>
+                  <TablixCells>
+                    <TablixCell><CellContents><Textbox Name="cServer"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!ServerName.Value</Value><Style><FontWeight>Bold</FontWeight><Color>#1259C3</Color><TextDecoration>Underline</TextDecoration></Style><ActionInfo><Actions><Action><Drillthrough><ReportName>ServerDetail</ReportName><Parameters><Parameter Name="ServerName"><Value>=Fields!ServerName.Value</Value></Parameter></Parameters></Drillthrough></Action></Actions></ActionInfo></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>cServer</rd:DefaultName><Style><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cEnv"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Environment.Value</Value></TextRun></TextRuns></Paragraph></Paragraphs><rd:DefaultName>cEnv</rd:DefaultName><Style><PaddingLeft>4pt</PaddingLeft><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cBackup"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Backup.Value</Value><Style><Color>=Switch(Fields!Backup.Value=&quot;CRIT&quot;,&quot;#8B1A1A&quot;,Fields!Backup.Value=&quot;WARN&quot;,&quot;#7A4E00&quot;,Fields!Backup.Value=&quot;OK&quot;,&quot;#1C6B3A&quot;,true,&quot;#8B98A5&quot;)</Color><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>cBackup</rd:DefaultName><Style><BackgroundColor>=Switch(Fields!Backup.Value=&quot;CRIT&quot;,&quot;#F4C7C7&quot;,Fields!Backup.Value=&quot;WARN&quot;,&quot;#F6E2B3&quot;,Fields!Backup.Value=&quot;OK&quot;,&quot;#CDEBD6&quot;,true,&quot;White&quot;)</BackgroundColor><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cDisk"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Disk.Value</Value><Style><Color>=Switch(Fields!Disk.Value=&quot;CRIT&quot;,&quot;#8B1A1A&quot;,Fields!Disk.Value=&quot;WARN&quot;,&quot;#7A4E00&quot;,Fields!Disk.Value=&quot;OK&quot;,&quot;#1C6B3A&quot;,true,&quot;#8B98A5&quot;)</Color><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>cDisk</rd:DefaultName><Style><BackgroundColor>=Switch(Fields!Disk.Value=&quot;CRIT&quot;,&quot;#F4C7C7&quot;,Fields!Disk.Value=&quot;WARN&quot;,&quot;#F6E2B3&quot;,Fields!Disk.Value=&quot;OK&quot;,&quot;#CDEBD6&quot;,true,&quot;White&quot;)</BackgroundColor><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cJobs"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Jobs.Value</Value><Style><Color>=Switch(Fields!Jobs.Value=&quot;CRIT&quot;,&quot;#8B1A1A&quot;,Fields!Jobs.Value=&quot;WARN&quot;,&quot;#7A4E00&quot;,Fields!Jobs.Value=&quot;OK&quot;,&quot;#1C6B3A&quot;,true,&quot;#8B98A5&quot;)</Color><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>cJobs</rd:DefaultName><Style><BackgroundColor>=Switch(Fields!Jobs.Value=&quot;CRIT&quot;,&quot;#F4C7C7&quot;,Fields!Jobs.Value=&quot;WARN&quot;,&quot;#F6E2B3&quot;,Fields!Jobs.Value=&quot;OK&quot;,&quot;#CDEBD6&quot;,true,&quot;White&quot;)</BackgroundColor><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cHA"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!HA.Value</Value><Style><Color>=Switch(Fields!HA.Value=&quot;CRIT&quot;,&quot;#8B1A1A&quot;,Fields!HA.Value=&quot;WARN&quot;,&quot;#7A4E00&quot;,Fields!HA.Value=&quot;OK&quot;,&quot;#1C6B3A&quot;,true,&quot;#8B98A5&quot;)</Color><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>cHA</rd:DefaultName><Style><BackgroundColor>=Switch(Fields!HA.Value=&quot;CRIT&quot;,&quot;#F4C7C7&quot;,Fields!HA.Value=&quot;WARN&quot;,&quot;#F6E2B3&quot;,Fields!HA.Value=&quot;OK&quot;,&quot;#CDEBD6&quot;,true,&quot;White&quot;)</BackgroundColor><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cIndex"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Index.Value</Value><Style><Color>=Switch(Fields!Index.Value=&quot;CRIT&quot;,&quot;#8B1A1A&quot;,Fields!Index.Value=&quot;WARN&quot;,&quot;#7A4E00&quot;,Fields!Index.Value=&quot;OK&quot;,&quot;#1C6B3A&quot;,true,&quot;#8B98A5&quot;)</Color><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>cIndex</rd:DefaultName><Style><BackgroundColor>=Switch(Fields!Index.Value=&quot;CRIT&quot;,&quot;#F4C7C7&quot;,Fields!Index.Value=&quot;WARN&quot;,&quot;#F6E2B3&quot;,Fields!Index.Value=&quot;OK&quot;,&quot;#CDEBD6&quot;,true,&quot;White&quot;)</BackgroundColor><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cConfig"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Config.Value</Value><Style><Color>=Switch(Fields!Config.Value=&quot;CRIT&quot;,&quot;#8B1A1A&quot;,Fields!Config.Value=&quot;WARN&quot;,&quot;#7A4E00&quot;,Fields!Config.Value=&quot;OK&quot;,&quot;#1C6B3A&quot;,true,&quot;#8B98A5&quot;)</Color><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>cConfig</rd:DefaultName><Style><BackgroundColor>=Switch(Fields!Config.Value=&quot;CRIT&quot;,&quot;#F4C7C7&quot;,Fields!Config.Value=&quot;WARN&quot;,&quot;#F6E2B3&quot;,Fields!Config.Value=&quot;OK&quot;,&quot;#CDEBD6&quot;,true,&quot;White&quot;)</BackgroundColor><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cPerf"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Perf.Value</Value><Style><Color>=Switch(Fields!Perf.Value=&quot;CRIT&quot;,&quot;#8B1A1A&quot;,Fields!Perf.Value=&quot;WARN&quot;,&quot;#7A4E00&quot;,Fields!Perf.Value=&quot;OK&quot;,&quot;#1C6B3A&quot;,true,&quot;#8B98A5&quot;)</Color><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>cPerf</rd:DefaultName><Style><BackgroundColor>=Switch(Fields!Perf.Value=&quot;CRIT&quot;,&quot;#F4C7C7&quot;,Fields!Perf.Value=&quot;WARN&quot;,&quot;#F6E2B3&quot;,Fields!Perf.Value=&quot;OK&quot;,&quot;#CDEBD6&quot;,true,&quot;White&quot;)</BackgroundColor><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                    <TablixCell><CellContents><Textbox Name="cData"><CanGrow>true</CanGrow><Paragraphs><Paragraph><TextRuns><TextRun><Value>=Fields!Data.Value</Value><Style><Color>=Switch(Fields!Data.Value=&quot;CRIT&quot;,&quot;#8B1A1A&quot;,Fields!Data.Value=&quot;WARN&quot;,&quot;#7A4E00&quot;,Fields!Data.Value=&quot;OK&quot;,&quot;#1C6B3A&quot;,true,&quot;#8B98A5&quot;)</Color><FontWeight>Bold</FontWeight></Style></TextRun></TextRuns><Style><TextAlign>Center</TextAlign></Style></Paragraph></Paragraphs><rd:DefaultName>cData</rd:DefaultName><Style><BackgroundColor>=Switch(Fields!Data.Value=&quot;CRIT&quot;,&quot;#F4C7C7&quot;,Fields!Data.Value=&quot;WARN&quot;,&quot;#F6E2B3&quot;,Fields!Data.Value=&quot;OK&quot;,&quot;#CDEBD6&quot;,true,&quot;White&quot;)</BackgroundColor><VerticalAlign>Middle</VerticalAlign><Border><Color>#D3DCE8</Color><Style>Solid</Style></Border></Style></Textbox></CellContents></TablixCell>
+                  </TablixCells>
+                </TablixRow>
+              </TablixRows>
+            </TablixBody>
+            <TablixColumnHierarchy>
+              <TablixMembers>
+                <TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember />
+                <TablixMember /><TablixMember /><TablixMember /><TablixMember /><TablixMember />
+              </TablixMembers>
+            </TablixColumnHierarchy>
+            <TablixRowHierarchy>
+              <TablixMembers>
+                <TablixMember><KeepWithGroup>After</KeepWithGroup><RepeatOnNewPage>true</RepeatOnNewPage></TablixMember>
+                <TablixMember>
+                  <Group Name="ServerRows"><GroupExpressions><GroupExpression>=Fields!ServerName.Value</GroupExpression></GroupExpressions></Group>
+                  <SortExpressions>
+                    <SortExpression><Value>=Fields!OverallRank.Value</Value></SortExpression>
+                    <SortExpression><Value>=Fields!ServerName.Value</Value></SortExpression>
+                  </SortExpressions>
+                </TablixMember>
+              </TablixMembers>
+            </TablixRowHierarchy>
+            <DataSetName>ds_Estate</DataSetName>
+            <Top>0.7in</Top><Left>0in</Left><Height>0.54in</Height><Width>9.4in</Width>
+            <Style><Border><Style>None</Style></Border></Style>
+          </Tablix>
+        </ReportItems>
+        <Height>3.5in</Height>
+        <Style />
+      </Body>
+      <Width>9.5in</Width>
+      <Page>
+        <PageHeight>8.5in</PageHeight>
+        <PageWidth>11in</PageWidth>
+        <LeftMargin>0.5in</LeftMargin><RightMargin>0.5in</RightMargin>
+        <TopMargin>0.5in</TopMargin><BottomMargin>0.5in</BottomMargin>
+        <Style />
+      </Page>
+    </ReportSection>
+  </ReportSections>
+  <ReportParameters>
+    <ReportParameter Name="Environment">
+      <DataType>String</DataType>
+      <Nullable>true</Nullable>
+      <AllowBlank>true</AllowBlank>
+      <MultiValue>true</MultiValue>
+      <Prompt>Environment</Prompt>
+      <ValidValues><DataSetReference><DataSetName>ds_Env</DataSetName><ValueField>Environment</ValueField><LabelField>Environment</LabelField></DataSetReference></ValidValues>
+    </ReportParameter>
+  </ReportParameters>
+  <rd:ReportUnitType>Inch</rd:ReportUnitType>
+</Report>
