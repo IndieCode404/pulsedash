@@ -487,7 +487,10 @@ foreach ($inst in @($targets.Keys)) {
 # ---- Redshift ----
 if ($cfg.redshift) {
     Write-Host "Collecting Redshift..." -ForegroundColor Cyan
-    & "$PSScriptRoot\Collect-Redshift.ps1" -ConfigPath $ConfigPath
+    # Isolated: a Redshift problem (driver, network, credentials) must NOT abort the
+    # run, or the post-processing below is skipped and the dashboard stays empty.
+    try   { & "$PSScriptRoot\Collect-Redshift.ps1" -ConfigPath $ConfigPath }
+    catch { Write-Warning "Redshift collection failed (SQL Server data is unaffected): $($_.Exception.Message)" }
 }
 
 # ---- Post-process: forecast, cost anomaly, findings, alert evaluation, purge ----

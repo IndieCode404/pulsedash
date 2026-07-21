@@ -50,7 +50,10 @@ function Get-RedshiftOdbcConnString($rs) {
     if (-not $driver) { $driver = $drivers[0] }   # try anyway; error will be logged
     # Build via OdbcConnectionStringBuilder so host/uid/pwd are safely quoted.
     $b = New-Object System.Data.Odbc.OdbcConnectionStringBuilder
-    $b.Driver     = $driver
+    # [string] cast is REQUIRED: $driver comes off a pipeline, so it is PSObject-
+    # wrapped and assigning it to the typed .Driver property throws
+    # "Cannot convert PSObject to System.String" (only when a driver IS installed).
+    $b.Driver     = [string]$driver
     $b['Server']  = [string]$rs.host
     $b['Port']    = [string]$rs.port
     $b['Database'] = [string]$rs.database
