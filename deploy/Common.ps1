@@ -85,15 +85,56 @@ function Invoke-SqlNonQuery {
 
 # Bulk-load a DataTable into a central table. DataTable column names must match
 # the destination column names (mapped by name, so column order is irrelevant).
+# Real column names of a destination table (cached). Excludes identity/computed
+# columns, which cannot be bulk-inserted into.
+$script:DbaDashDestCols = @{}
+function Get-DestinationColumns {
+    param([string]$ConnString, [string]$Destination)
+    if ($script:DbaDashDestCols.ContainsKey($Destination)) { return $script:DbaDashDestCols[$Destination] }
+    $cols = New-Object 'System.Collections.Generic.List[string]'
+    $c = New-Object System.Data.SqlClient.SqlConnection $ConnString
+    try {
+        $c.Open(); $cmd = $c.CreateCommand()
+        $cmd.CommandText = "SELECT name FROM sys.columns
+                            WHERE object_id = OBJECT_ID(@t) AND is_computed = 0 AND is_identity = 0"
+        [void]$cmd.Parameters.AddWithValue('@t', $Destination)
+        $r = $cmd.ExecuteReader()
+        while ($r.Read()) { $cols.Add($r.GetString(0)) }
+        $r.Close()
+    } finally { $c.Dispose() }
+    $script:DbaDashDestCols[$Destination] = $cols
+    return $cols
+}
+
+# Bulk-load a DataTable into a central table, mapping BY NAME (order irrelevant).
+# Source column names are matched case-INSENSITIVELY and mapped to the destination's
+# real casing - Redshift/ODBC returns lowercase aliases ("volumename"), and
+# SqlBulkCopy's own mapping is case-sensitive, which otherwise fails with
+# "the given columnmapping does not match up with any column in the source or destination".
 function Write-BulkTable {
     param([string]$ConnString, [System.Data.DataTable]$Table, [string]$Destination)
     if ($Table.Rows.Count -eq 0) { return 0 }
+
+    $destCols = Get-DestinationColumns -ConnString $ConnString -Destination $Destination
+    if ($destCols.Count -eq 0) { throw "Write-BulkTable: destination table '$Destination' not found." }
+
+    $pairs   = @()
+    $missing = @()
+    foreach ($col in $Table.Columns) {
+        $match = $destCols | Where-Object { $_ -eq $col.ColumnName } | Select-Object -First 1   # -eq is case-insensitive
+        if ($match) { $pairs += ,@($col.ColumnName, [string]$match) } else { $missing += $col.ColumnName }
+    }
+    if ($missing.Count -gt 0) {
+        throw ("Write-BulkTable -> {0}: {1} source column(s) have no destination match: {2}`n" -f
+                    $Destination, $missing.Count, ($missing -join ', ')) +
+              ("  source cols: {0}`n" -f (@($Table.Columns | ForEach-Object { $_.ColumnName }) -join ', ')) +
+              ("  dest cols  : {0}" -f (($destCols | Sort-Object) -join ', '))
+    }
+
     $bulk = New-Object System.Data.SqlClient.SqlBulkCopy($ConnString)
     try {
         $bulk.DestinationTableName = $Destination
-        foreach ($col in $Table.Columns) {
-            [void]$bulk.ColumnMappings.Add($col.ColumnName, $col.ColumnName)
-        }
+        foreach ($p in $pairs) { [void]$bulk.ColumnMappings.Add($p[0], $p[1]) }
         $bulk.WriteToServer($Table)
         return $Table.Rows.Count
     } finally { $bulk.Close() }
