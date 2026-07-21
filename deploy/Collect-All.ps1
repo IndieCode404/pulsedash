@@ -128,19 +128,19 @@ SELECT 'suspect_pages', (SELECT CAST(COUNT(*) AS float) FROM msdb.dbo.suspect_pa
 UNION ALL
 -- cumulative since restart (trend it; a jump between collections = new deadlocks)
 SELECT 'deadlocks_total',
-       (SELECT CAST(cntr_value AS float) FROM sys.dm_os_performance_counters
-        WHERE counter_name='Number of Deadlocks/sec' AND instance_name='_Total'), NULL
+       ISNULL((SELECT CAST(cntr_value AS float) FROM sys.dm_os_performance_counters
+        WHERE counter_name='Number of Deadlocks/sec' AND instance_name='_Total'), 0), NULL
 UNION ALL
 -- tempdb allocated size (GB) - the "why is tempdb huge" early warning
 SELECT 'tempdb_used_gb',
-       (SELECT CAST(SUM(user_object_reserved_page_count + internal_object_reserved_page_count
+       ISNULL((SELECT CAST(SUM(user_object_reserved_page_count + internal_object_reserved_page_count
                        + version_store_reserved_page_count + mixed_extent_page_count) * 8 / 1048576.0 AS float)
-        FROM tempdb.sys.dm_db_file_space_usage), NULL
+        FROM tempdb.sys.dm_db_file_space_usage), 0), NULL
 UNION ALL
 -- tempdb version store (GB) - long-open transactions / snapshot isolation bloat
 SELECT 'tempdb_version_store_gb',
-       (SELECT CAST(SUM(version_store_reserved_page_count) * 8 / 1048576.0 AS float)
-        FROM tempdb.sys.dm_db_file_space_usage), NULL
+       ISNULL((SELECT CAST(SUM(version_store_reserved_page_count) * 8 / 1048576.0 AS float)
+        FROM tempdb.sys.dm_db_file_space_usage), 0), NULL
 UNION ALL
 -- worst VLF count across databases (only emitted where dm_db_log_info exists)
 SELECT 'max_vlf_count', @maxvlf, NULL WHERE @maxvlf IS NOT NULL;

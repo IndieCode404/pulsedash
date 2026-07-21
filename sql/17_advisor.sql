@@ -38,7 +38,7 @@ CREATE TABLE mon.LockWait
     BlockerPid      INT           NULL,
     BlockerUser     NVARCHAR(128) NULL,
     BlockerLockMode NVARCHAR(60)  NULL,
-    BlockerIdleInTxn BIT          NULL,     -- 1 = holds lock with no running query
+    BlockerIdleInTxn TINYINT      NULL,     -- 1 = holds lock with no running query (loaded from ODBC as int, not bit)
     BlockerQuery    NVARCHAR(500) NULL,
     ConflictCount24h INT          NULL      -- serialization aborts on this table, 24h
 );
