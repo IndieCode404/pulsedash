@@ -192,11 +192,26 @@ function Delete-Owner([int]$id) {
 }
 
 # ---- tiny HTTP server ------------------------------------------------------
+# Pre-flight: refuse to start on a busy port instead of failing obscurely.
+# NOTE: HttpListener uses http.sys (kernel), so a conflicting reservation shows as
+# owner "System" / PID 4 - that is NOT a process you can kill. On a SQL box this is
+# usually SSRS. Just pick another port with -Port.
+try {
+    $busy = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($busy) {
+        $who = (Get-Process -Id $busy.OwningProcess -ErrorAction SilentlyContinue).ProcessName
+        throw ("Port $Port is already in use by '{0}' (PID {1}).`n" -f $who, $busy.OwningProcess) +
+              "If that is 'System' it is an http.sys reservation (often SSRS) - you cannot kill it.`n" +
+              "Start on another port instead:   .\Start-Dashboard.ps1 -Port 8090"
+    }
+} catch [System.Management.Automation.CommandNotFoundException] { }   # older OS: skip the check
+
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
 Write-Host "DBADash dashboard running:  http://localhost:$Port/   (Ctrl+C to stop)" -ForegroundColor Green
 Write-Host "  data source: [$Instance].[$Database]" -ForegroundColor Gray
+Write-Host "  this window's PID: $PID   (if Ctrl+C ever fails:  Stop-Process -Id $PID)" -ForegroundColor DarkGray
 
 $www   = Join-Path $PSScriptRoot 'www'
 $types = @{ '.html'='text/html'; '.css'='text/css'; '.js'='application/javascript'; '.svg'='image/svg+xml'; '.json'='application/json'; '.png'='image/png'; '.jpg'='image/jpeg'; '.gif'='image/gif' }
@@ -212,7 +227,12 @@ function Send-Json($ctx, $obj, [int]$code = 200) {
 
 try {
     while ($listener.IsListening) {
-        $ctx  = $listener.GetContext()
+        # GetContextAsync + a short wait keeps Ctrl+C responsive. A bare
+        # GetContext() blocks in native code and swallows Ctrl+C, which leaves the
+        # http.sys reservation behind and forces you to kill the process.
+        $task = $listener.GetContextAsync()
+        while (-not $task.AsyncWaitHandle.WaitOne(200)) { }
+        $ctx  = $task.GetAwaiter().GetResult()
         $path = $ctx.Request.Url.AbsolutePath.TrimEnd('/')
         $verb = $ctx.Request.HttpMethod
 
@@ -314,4 +334,10 @@ try {
             Send-Json $ctx @{ error = $_.Exception.Message } 500
         }
     }
-} finally { $listener.Stop() }
+} finally {
+    # Stop AND Close, so the http.sys reservation is released immediately and the
+    # port is free for the next run.
+    if ($listener.IsListening) { $listener.Stop() }
+    $listener.Close()
+    Write-Host "Dashboard stopped; port $Port released." -ForegroundColor Gray
+}
