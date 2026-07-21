@@ -83,6 +83,16 @@ BEGIN
     ;WITH ag AS (SELECT *, rn=ROW_NUMBER() OVER (PARTITION BY ServerName, EventTime, DatabaseName, FileType ORDER BY SnapshotID DESC)
                  FROM mon.AutoGrowth)
     DELETE FROM ag WHERE rn > 1;
+    -- Event tables re-read the same 24h window every cycle, so the SAME failed
+    -- login / job failure is stored once per run (~96x/day). Collapse to one row
+    -- per real event. (The rpt.* views already dedupe for display; this stops the
+    -- underlying tables bloating.)
+    ;WITH fl AS (SELECT *, rn=ROW_NUMBER() OVER (PARTITION BY ServerName, EventTime, Message ORDER BY SnapshotID DESC)
+                 FROM mon.FailedLogin)
+    DELETE FROM fl WHERE rn > 1;
+    ;WITH jf AS (SELECT *, rn=ROW_NUMBER() OVER (PARTITION BY ServerName, JobName, StepName, RunAt ORDER BY SnapshotID DESC)
+                 FROM mon.JobFailure)
+    DELETE FROM jf WHERE rn > 1;
     DELETE FROM cfg.CollectionLog WHERE RunAt < @cut;
 END;
 GO
