@@ -43,14 +43,18 @@ function Get-DbaDashConfig {
 # install the target certs so the link can't be MITM'd.
 function Get-SqlConnString {
     param([string]$Instance, [string]$Database = 'master', [string]$User, [string]$Password)
+    # NOTE: set via the INDEXER using real connection-string keywords, not the .NET
+    # property names. SqlConnectionStringBuilder implements IDictionary, so in
+    # Windows PowerShell "$b.DataSource = x" binds to the dictionary indexer and
+    # fails with "Keyword not supported: 'DataSource'".
     $b = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-    $b.DataSource              = $Instance
-    $b.InitialCatalog          = $Database
-    $b.TrustServerCertificate  = $true
-    $b.ConnectTimeout          = 15
-    $b.ApplicationName         = 'DBADash'
-    if ([string]::IsNullOrWhiteSpace($User)) { $b.IntegratedSecurity = $true }
-    else { $b.UserID = $User; $b.Password = $Password }
+    $b['Data Source']            = $Instance
+    $b['Initial Catalog']        = $Database
+    $b['TrustServerCertificate'] = $true
+    $b['Connect Timeout']        = 15
+    $b['Application Name']       = 'DBADash'
+    if ([string]::IsNullOrWhiteSpace($User)) { $b['Integrated Security'] = $true }
+    else { $b['User ID'] = $User; $b['Password'] = $Password }
     return $b.ConnectionString
 }
 

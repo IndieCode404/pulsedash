@@ -153,14 +153,15 @@ function Test-ServerConnection($body) {
             $oc = New-Object System.Data.Odbc.OdbcConnection $b.ConnectionString
             try { $oc.ConnectionTimeout = 10; $oc.Open() } finally { $oc.Dispose() }
         } else {
+            # Indexer + real keywords (see Common.ps1) - property names throw in PS 5.1.
             $b = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
-            $b.DataSource             = [string]$body.ServerName
-            $b.InitialCatalog         = 'master'
-            $b.TrustServerCertificate = $true
-            $b.ConnectTimeout         = 10
-            $b.ApplicationName        = 'DBADash-Test'
-            if ($body.AuthType -eq 'sql') { $b.UserID = [string]$body.UserName; $b.Password = [string]$body.Password }
-            else { $b.IntegratedSecurity = $true }
+            $b['Data Source']            = [string]$body.ServerName
+            $b['Initial Catalog']        = 'master'
+            $b['TrustServerCertificate'] = $true
+            $b['Connect Timeout']        = 10
+            $b['Application Name']       = 'DBADash-Test'
+            if ($body.AuthType -eq 'sql') { $b['User ID'] = [string]$body.UserName; $b['Password'] = [string]$body.Password }
+            else { $b['Integrated Security'] = $true }
             $sc = New-Object System.Data.SqlClient.SqlConnection $b.ConnectionString
             try { $sc.Open() } finally { $sc.Dispose() }
         }
