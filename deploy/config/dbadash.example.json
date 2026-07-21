@@ -1,7 +1,8 @@
 {
   "central": {
     "//": "Where the DBADash database lives. All collectors load here.",
-    "sqlInstance": "SQLMON01",
+    "//sqlInstance": "LEAVE BLANK on a fresh install - Deploy-DBADash.ps1 will prompt and save it. Examples: 'SQLMON01', '.\\SQLEXPRESS', 'HOST\\INSTANCE'.",
+    "sqlInstance": "",
     "database": "DBADash",
     "//auth": "Leave user/password empty to use Windows/Integrated auth.",
     "user": "",
@@ -9,31 +10,21 @@
   },
 
   "cms": {
-    "//": "MSSQL targets come from THREE sources, all merged: (1) this CMS group,",
+    "//": "MSSQL targets come from THREE sources, all merged: (1) a CMS group,",
     "//2": "(2) the mssqlInstances list below, (3) servers added on the dashboard 'Servers' tab.",
-    "//3": "No CMS? Set 'group' to null and use the other two sources.",
-    "cmsInstance": "SQLMON01",
-    "group": "PROD-SQL",
+    "//3": "Blank cmsInstance / null group = skip CMS entirely (default).",
+    "cmsInstance": "",
+    "group": null,
 
     "//mssqlInstances": "Strings connect with Windows auth. For SQL auth use an object:",
     "//example": "[ \"SQLPROD07\", { \"instance\": \"SQLDMZ01\", \"user\": \"dbadash_ro\", \"password\": \"\", \"passwordEnvVar\": \"DBADASH_DMZ_PWD\" } ]",
     "mssqlInstances": []
   },
 
-  "redshift": [
-    {
-      "clusterId": "rs-analytics",
-      "environment": "PROD",
-      "host": "rs-analytics.abc123.us-east-1.redshift.amazonaws.com",
-      "port": 5439,
-      "database": "analytics",
-      "user": "dbadash_ro",
-      "//password": "Prefer the DBADASH_RS_PWD env var over storing it here.",
-      "password": "",
-      "//dsn": "Optional: name of a preconfigured ODBC DSN. If set, host/port/etc are ignored.",
-      "dsn": ""
-    }
-  ],
+  "//redshift": "Empty = skip Redshift collection. Add one object per cluster, e.g.:",
+  "//redshiftExample": "{ \"clusterId\": \"rs-analytics\", \"environment\": \"PROD\", \"host\": \"rs-analytics.abc123.us-east-1.redshift.amazonaws.com\", \"port\": 5439, \"database\": \"analytics\", \"user\": \"dbadash_ro\", \"password\": \"\", \"dsn\": \"\" }",
+  "//redshiftPassword": "Prefer the DBADASH_RS_PWD env var, or add the cluster on the dashboard 'Servers' tab (DPAPI-encrypted).",
+  "redshift": [],
 
   "alerting": {
     "//": "Email active CRIT/WARN alerts. transport = 'smtp' or 'dbmail'.",

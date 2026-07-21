@@ -64,15 +64,27 @@ if ($askAuth -and -not $NonInteractive) {
     }
 }
 
-# --- pre-flight: fail fast with a friendly message if we can't connect ---------
-$conn = Get-SqlConnString -Instance $Instance -Database 'master' -User $authUser -Password $authPwd
-Write-Host "Connecting to [$Instance] as $(if ($authUser) { "SQL login '$authUser'" } else { 'the current Windows account' })..." -ForegroundColor Cyan
-try {
-    $probe = New-Object System.Data.SqlClient.SqlConnection $conn
-    try { $probe.Open() } finally { $probe.Dispose() }
-} catch {
-    throw "Could not connect to [$Instance]: $($_.Exception.GetBaseException().Message)`n" +
-          "Check the instance name, that SQL Server is reachable, and that this login can CREATE DATABASE."
+# --- pre-flight: connect, re-prompting so a wrong/placeholder instance isn't a dead end ---
+$conn = $null
+for ($attempt = 1; ; $attempt++) {
+    $conn = Get-SqlConnString -Instance $Instance -Database 'master' -User $authUser -Password $authPwd
+    Write-Host "Connecting to [$Instance] as $(if ($authUser) { "SQL login '$authUser'" } else { 'the current Windows account' })..." -ForegroundColor Cyan
+    try {
+        $probe = New-Object System.Data.SqlClient.SqlConnection $conn
+        try { $probe.Open() } finally { $probe.Dispose() }
+        break                                    # connected
+    } catch {
+        $why = $_.Exception.GetBaseException().Message
+        if ($NonInteractive -or $attempt -ge 3) {
+            throw "Could not connect to [$Instance]: $why`n" +
+                  "Check the instance name, that SQL Server is reachable, and that this login can CREATE DATABASE."
+        }
+        Write-Warning "Could not connect to [$Instance]: $why"
+        Write-Host 'Tip: list local instances with   Get-Service | Where-Object { $_.Name -like "MSSQL*" }' -ForegroundColor Gray
+        Write-Host '     MSSQLSERVER = default instance (use the hostname or ".");  MSSQL$SQLEXPRESS = use ".\SQLEXPRESS"' -ForegroundColor Gray
+        $Instance = Read-Host "SQL Server instance to use"
+        if ([string]::IsNullOrWhiteSpace($Instance)) { throw "An instance name is required." }
+    }
 }
 
 # --- run the numbered deploy scripts (target-side collection lives in the collector) ---
