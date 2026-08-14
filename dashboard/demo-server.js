@@ -25,6 +25,13 @@ let servers = [
 
 const DATA = {
   '/api/servers': () => [...servers].sort((a,b)=>(b.IsActive-a.IsActive)||a.ServerName.localeCompare(b.ServerName)),
+  '/api/estate': () => [
+    { ServerName:'SQLPROD03', Environment:'PROD', Platform:'MSSQL', Backup:'CRIT', Disk:'CRIT', Jobs:'CRIT', HA:'NA', Index:'WARN', Config:'WARN', Perf:'WARN', Data:'OK', OverallStatus:'CRIT', OverallRank:0 },
+    { ServerName:'rs-analytics', Environment:'PROD', Platform:'Redshift', Backup:'NA', Disk:'WARN', Jobs:'NA', HA:'NA', Index:'CRIT', Config:'OK', Perf:'CRIT', Data:'CRIT', OverallStatus:'CRIT', OverallRank:0 },
+    { ServerName:'SQLPROD01\\AG', Environment:'PROD', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'WARN', HA:'WARN', Index:'WARN', Config:'OK', Perf:'OK', Data:'OK', OverallStatus:'WARN', OverallRank:1 },
+    { ServerName:'SQLPROD02\\AG', Environment:'PROD', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'OK', HA:'WARN', Index:'OK', Config:'OK', Perf:'OK', Data:'OK', OverallStatus:'WARN', OverallRank:1 },
+    { ServerName:'SQLUAT01', Environment:'UAT', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'OK', HA:'NA', Index:'OK', Config:'OK', Perf:'OK', Data:'OK', OverallStatus:'OK', OverallRank:2 },
+  ],
   '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, OpenFindings:2, HighLatencyFiles:2, ConfigWarnings:3, Sysadmins:7, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
   '/api/fileio': () => [
     { Status:'CRIT', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', FileType:'ROWS', ReadLatencyMs:68.4, WriteLatencyMs:12.1, AvgLatencyMs:41.2, SizeMB:512000, TotalReadMB:1840000, TotalWriteMB:210000 },

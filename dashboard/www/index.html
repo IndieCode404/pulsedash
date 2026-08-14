@@ -28,7 +28,8 @@
 
   <!-- Tabs -->
   <nav class="tabs">
-    <button class="tab active" data-tab="ag">AG Sync</button>
+    <button class="tab active" data-tab="estate">Estate</button>
+    <button class="tab" data-tab="ag">AG Sync</button>
     <button class="tab" data-tab="lag">Data Lag</button>
     <button class="tab" data-tab="health">Health</button>
     <button class="tab" data-tab="activity">Activity</button>
@@ -45,7 +46,13 @@
   </nav>
 
   <main>
-    <section id="tab-ag" class="panel active">
+    <section id="tab-estate" class="panel active">
+      <div class="panel-head"><h2>Estate Health <span class="muted">— every server × domain, worst-first. Click a cell to drill in.</span></h2></div>
+      <div id="estateGrid"></div>
+      <p class="estate-hint">OK = healthy · WRN = needs a look · CRT = act now · – = not applicable</p>
+    </section>
+
+    <section id="tab-ag" class="panel">
       <div class="panel-head"><h2>Always On — AG Sync Status</h2></div>
       <div id="agTable" class="tablewrap"></div>
     </section>
@@ -151,7 +158,7 @@
 
       <div id="ownerForm" class="card form hidden">
         <div class="grid">
-          <label>Server / Cluster<input id="f_ServerName" required /></label>
+          <label>Server / Cluster<input id="f_ServerName" list="f_serverList" required /><datalist id="f_serverList"></datalist></label>
           <label>Database <span class="muted">(or (instance))</span><input id="f_DatabaseName" placeholder="(instance)" /></label>
           <label>Application<input id="f_AppName" required /></label>
           <label>Criticality

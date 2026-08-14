@@ -254,6 +254,7 @@ try {
         try {
             switch -Regex ("$verb $path") {
                 '^GET /api/overview$' { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.Overview;') ; break }
+                '^GET /api/estate$'   { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.EstateHealth ORDER BY OverallRank, ServerName;') ; break }
                 '^GET /api/ag$'       { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.AGSyncStatus ORDER BY Status DESC, AGName, DatabaseName;') ; break }
                 '^GET /api/lag$'      { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.DataLag ORDER BY CASE Status WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, LagSeconds DESC;') ; break }
                 '^GET /api/disk$'     { Send-Json $ctx (Query-Json 'SELECT * FROM rpt.DiskForecast ORDER BY CASE Severity WHEN ''CRIT'' THEN 0 WHEN ''WARN'' THEN 1 ELSE 2 END, DaysToFull;') ; break }

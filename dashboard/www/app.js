@@ -29,6 +29,35 @@ function table(rows, cols) {
   return `<table>${head}${body}</table>`;
 }
 
+/* ---- estate grid (landing: server × domain RAG matrix) ---- */
+// domain column -> the tab that drills into it
+const ESTATE_DOMAINS = [
+  ['Backup','health'], ['Disk','disk'], ['Jobs','health'], ['HA','ag'],
+  ['Index','activity'], ['Config','config'], ['Perf','activity'], ['Data','lag'],
+];
+function estateChip(s) {
+  const st = String(s || 'NA').toUpperCase();
+  const lbl = st === 'OK' ? 'OK' : st === 'WARN' ? 'WRN' : st === 'CRIT' ? 'CRT' : '–';
+  return `<span class="cellchip ${st === 'OK' || st === 'WARN' || st === 'CRIT' ? st : 'NA'}">${lbl}</span>`;
+}
+async function loadEstate() {
+  const el = $('#estateGrid');
+  const rows = await api('/api/estate').catch(() => []);
+  if (!rows || !rows.length) { el.innerHTML = '<div class="empty">No estate data yet — run a collection, then refresh.</div>'; return; }
+  const rank = { CRIT: 0, WARN: 1, OK: 2 };
+  rows.sort((a, b) => (a.OverallRank ?? 3) - (b.OverallRank ?? 3) || String(a.ServerName).localeCompare(String(b.ServerName)));
+  const head = '<tr><th>Server</th><th>Env</th>' + ESTATE_DOMAINS.map(d => `<th>${d[0]}</th>`).join('') + '</tr>';
+  const body = rows.map(r => {
+    const ov = String(r.OverallStatus || 'OK').toUpperCase();
+    return `<tr>
+      <td class="srvcell"><span class="dot ${ov === 'OK' || ov === 'WARN' || ov === 'CRIT' ? ov : 'OK'}"></span><b>${esc(r.ServerName)}</b></td>
+      <td><span class="tag">${esc(r.Environment || '—')}</span></td>
+      ${ESTATE_DOMAINS.map(d => `<td class="est-cell" data-tab="${d[1]}" title="${d[0]}: ${esc(r[d[0]] || 'n/a')} — click to open">${estateChip(r[d[0]])}</td>`).join('')}
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<div class="tablewrap estate"><table>${head}${body}</table></div>`;
+}
+
 /* ---- KPI strip ---- */
 async function loadKpis() {
   const [o, alerts] = await Promise.all([
@@ -107,6 +136,11 @@ async function loadDisk() {
 
 async function loadOwners() {
   const rows = await api('/api/owners');
+  // suggest real inventory servers in the owner form (still free-typeable)
+  api('/api/servers').then(srv => {
+    const dl = $('#f_serverList');
+    if (dl && srv) dl.innerHTML = srv.map(s => `<option value="${esc(s.ServerName)}"></option>`).join('');
+  }).catch(() => {});
   $('#ownersTable').innerHTML = table(rows, [
     { h: 'Tier',    k: 'Criticality', f: v => `<span class="tier ${v}">${v}</span>` },
     { h: 'Server',  k: 'ServerName' },
@@ -519,12 +553,23 @@ async function saveOwner() {
 const S_FIELDS = ['ServerName','Platform','Environment','FriendlyName','IsActive'];
 
 async function loadServers() {
-  const rows = await api('/api/servers');
+  const [rows, owners] = await Promise.all([api('/api/servers'), api('/api/owners').catch(() => [])]);
+  // index owners by server so each server row can show who owns it
+  const ownersBy = {};
+  (owners || []).forEach(o => { (ownersBy[o.ServerName] = ownersBy[o.ServerName] || []).push(o); });
   $('#serversTable').innerHTML = table(rows, [
     { h: 'Active',   k: 'IsActive', f: v => v ? '<span class="pill OK">ACTIVE</span>' : '<span class="pill WARN">PAUSED</span>' },
     { h: 'Server',   k: 'ServerName' },
     { h: 'Platform', k: 'Platform' },
     { h: 'Env',      k: 'Environment' },
+    { h: 'App / Owner', k: 'ServerName', f: (v, r) => {
+        const os = ownersBy[r.ServerName] || [];
+        if (!os.length) return '<span class="muted">unassigned</span>';
+        const first = os[0];
+        const more = os.length > 1 ? ` <span class="muted">+${os.length - 1}</span>` : '';
+        const title = os.map(o => `${o.AppName} — ${o.PrimaryOwner || '?'} (${o.Criticality || 'Tier?'})`).join('\n');
+        return `<span title="${esc(title)}"><b>${esc(first.AppName)}</b> · ${esc(first.PrimaryOwner || '—')}${more}</span>`;
+      } },
     { h: 'Auth',     k: 'AuthType', f: (v, r) => v === 'sql'
         ? `SQL login${r.UserName ? ' (' + esc(r.UserName) + ')' : ''}${r.HasPassword ? ' 🔒' : ''}`
         : 'Windows' },
@@ -611,7 +656,7 @@ async function saveServer() {
 /* ---- wiring ---- */
 function refreshActive() {
   const t = $('.tab.active').dataset.tab;
-  ({ ag: loadAg, lag: loadLag, disk: loadDisk, growth: loadGrowth,
+  ({ estate: loadEstate, ag: loadAg, lag: loadLag, disk: loadDisk, growth: loadGrowth,
      health: loadHealth, activity: loadActivity, advisor: loadAdvisor, bottlenecks: loadBottlenecks,
      config: loadConfig, access: loadAccess,
      cost: loadCost, alerts: loadAlerts, owners: loadOwners, servers: loadServers }[t])();
@@ -629,6 +674,12 @@ function switchTab(name) {
 }
 
 $$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+// estate-grid cells drill into the matching domain tab
+$('#estateGrid').addEventListener('click', e => {
+  const cell = e.target.closest('.est-cell[data-tab]');
+  if (cell) switchTab(cell.dataset.tab);
+});
 
 // KPI cards are shortcuts to the tab where you can act on the number.
 // Delegated (cards re-render every refresh); Enter/Space work for keyboard users.
@@ -684,4 +735,4 @@ async function applyBranding() {
 }
 applyBranding();
 
-loadKpis(); loadAg(); setAuto(true);
+loadKpis(); loadEstate(); setAuto(true);
