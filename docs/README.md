@@ -2,8 +2,21 @@
 
 | File | What it is |
 |------|-----------|
+| [KIRO-KICKOFF.md](KIRO-KICKOFF.md) | **Start here for the POC build in Kiro** — setup, API-cost discipline, the kickoff prompt to paste, and the task workflow. Works with the steering + spec in `.kiro/`. |
+| [PORTABILITY.md](PORTABILITY.md) | **SQL Server → AWS Aurora PostgreSQL** ledger — the type/function maps and the three isolated engine seams that make the store layer portable. The artifact that backs the "migrate to Aurora without a challenge" commitment. |
+| [SECURITY-CHECKLIST.md](SECURITY-CHECKLIST.md) | Reviewable gate so **the HTML dashboard can't create vulnerabilities** — XSS/output-encoding, CSP, CSRF, SQL injection, path traversal, secrets, least privilege. |
 | [COST_ANOMALY.md](COST_ANOMALY.md) | Redshift cost-anomaly playbook — AWS-native (Cost Anomaly Detection, Cost Explorer, CUR) vs. the in-cluster z-score detection DBADash performs, and when to use which. |
-| [DBADash-Monitoring-Proposal.pptx](DBADash-Monitoring-Proposal.pptx) | **Client pitch deck** (11 slides) — the problem, coverage, architecture, technical requirements, data-protection guarantees, the optional AI layer, business value, roadmap, and a 4-week pilot ask. Speaker notes on every slide. |
+| [DBADash-Monitoring-Proposal.pptx](DBADash-Monitoring-Proposal.pptx) | **Client pitch deck** (11 slides) — problem, coverage, architecture, requirements, data-protection, optional AI layer, business value, roadmap, pilot ask. |
+| [Database-Monitoring-POC-Proposal.pptx](Database-Monitoring-POC-Proposal.pptx) | **POC approval deck** (12 slides, pre-build framing) — architecture diagram, tech stack, scope, security, Claude access, indicative business case, 8-week plan. |
+
+## Kiro build guardrails
+
+The POC is built in **Kiro** under always-on steering in `.kiro/steering/`
+(`product.md`, `tech.md`, `guardrails.md`) with the first spec in
+`.kiro/specs/foundation/`. Those files encode the non-negotiables — data residency
+(nothing leaves the network, no client data in prompts), read-only on targets,
+Aurora portability, HTML security, and API-cost discipline. Read
+[KIRO-KICKOFF.md](KIRO-KICKOFF.md) first.
 
 ## About the deck
 
