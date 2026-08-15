@@ -20,7 +20,7 @@ CREATE TABLE mon.AlertHistory
 (
     AlertID    BIGINT IDENTITY(1,1) PRIMARY KEY,
     AlertKey   NVARCHAR(300) NOT NULL,     -- stable id for a condition (dedup key)
-    Category   VARCHAR(20)   NOT NULL,     -- AG | Lag | Disk | Backup | Job | Vitals
+    Category   VARCHAR(20)   NOT NULL,     -- AG | Lag | Disk | Cost
     Severity   VARCHAR(10)   NOT NULL,     -- WARN | CRIT
     ServerName SYSNAME       NULL,
     Message    NVARCHAR(600) NOT NULL,
@@ -34,6 +34,57 @@ GO
 -- One ACTIVE alert per key (resolved history rows are exempt).
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='UX_AlertHistory_Active' AND object_id=OBJECT_ID('mon.AlertHistory'))
 CREATE UNIQUE INDEX UX_AlertHistory_Active ON mon.AlertHistory (AlertKey) WHERE Resolved = 0;
+GO
+
+/*---------------------------------------------------------------------------
+  cfg.usp_Evaluate_Alerts  -  refresh the active-alert set from the rpt views.
+---------------------------------------------------------------------------*/
+CREATE OR ALTER PROCEDURE cfg.usp_Evaluate_Alerts
+AS
+BEGIN
+    SET NOCOUNT ON;
+    CREATE TABLE #cur (AlertKey NVARCHAR(300), Category VARCHAR(20), Severity VARCHAR(10),
+                       ServerName SYSNAME NULL, Message NVARCHAR(600));
+
+    INSERT #cur
+    SELECT CONCAT('Disk|',ServerName,'|',VolumeName), 'Disk', Severity, ServerName,
+           CONCAT(ServerName,' ',VolumeName,' at ',UsedPct,'% - full in ',
+                  ISNULL(CAST(DaysToFull AS VARCHAR(10)),'?'),' days (add +',
+                  ISNULL(CAST(RecommendedAddGB AS VARCHAR(10)),'?'),' GB)')
+    FROM rpt.DiskForecast WHERE Severity IN ('WARN','CRIT');
+
+    INSERT #cur
+    SELECT CONCAT('AG|',AGName,'|',DatabaseName,'|',ReplicaServer), 'AG', Status, ReplicaServer,
+           CONCAT('AG ',AGName,' / ',DatabaseName,' on ',ReplicaServer,' is ',SyncState,' / ',SyncHealth)
+    FROM rpt.AGSyncStatus WHERE Status IN ('WARN','CRIT');
+
+    INSERT #cur
+    SELECT CONCAT('Lag|',ServerName,'|',ObjectName), 'Lag', Status, ServerName,
+           CONCAT(Platform,' ',ObjectName,' lag = ',ISNULL(CAST(LagSeconds AS VARCHAR(20)),'?'),'s')
+    FROM rpt.DataLag WHERE Status IN ('WARN','CRIT');
+
+    INSERT #cur
+    SELECT CONCAT('Cost|',ServerName,'|',MetricName,'|',ObservedDay), 'Cost', Severity, ServerName,
+           CONCAT('Cost spike: ',MetricName,' = ',Value,' (',PctAboveBaseline,'% over baseline)')
+    FROM rpt.CostAnomaly WHERE ObservedDay >= CAST(SYSUTCDATETIME() AS DATE);
+
+    -- upsert active alerts (keep FirstSeen, refresh Severity/Message/LastSeen)
+    MERGE mon.AlertHistory AS t
+    USING #cur AS s ON t.AlertKey = s.AlertKey AND t.Resolved = 0
+    WHEN MATCHED THEN UPDATE SET
+        t.Severity = s.Severity, t.Message = s.Message, t.LastSeen = SYSUTCDATETIME()
+    WHEN NOT MATCHED BY TARGET THEN INSERT
+        (AlertKey, Category, Severity, ServerName, Message)
+        VALUES (s.AlertKey, s.Category, s.Severity, s.ServerName, s.Message);
+
+    -- auto-resolve anything that has cleared
+    UPDATE t SET Resolved = 1, ResolvedAt = SYSUTCDATETIME()
+    FROM mon.AlertHistory t
+    WHERE t.Resolved = 0
+      AND NOT EXISTS (SELECT 1 FROM #cur c WHERE c.AlertKey = t.AlertKey);
+
+    SELECT ActiveAlerts = (SELECT COUNT(*) FROM mon.AlertHistory WHERE Resolved = 0);
+END;
 GO
 
 /*---------------------------------------------------------------------------
@@ -96,5 +147,5 @@ BEGIN
 END;
 GO
 
-PRINT 'Alerting objects created (10_alerts).';
+PRINT 'Alerting objects created.';
 GO

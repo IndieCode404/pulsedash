@@ -256,11 +256,6 @@ BEGIN
     FROM rpt.DataLag WHERE Status IN ('WARN','CRIT');
 
     INSERT #cur
-    SELECT CONCAT('Cost|',ServerName,'|',MetricName,'|',ObservedDay), 'Cost', Severity, ServerName,
-           CONCAT('Cost spike: ',MetricName,' = ',Value,' (',PctAboveBaseline,'% over baseline)')
-    FROM rpt.CostAnomaly WHERE ObservedDay >= CAST(SYSUTCDATETIME() AS DATE);
-
-    INSERT #cur
     SELECT CONCAT('Backup|',ServerName,'|',DatabaseName), 'Backup', Status, ServerName,
            CONCAT(DatabaseName,' [',StateDesc,'/',RecoveryModel,'] last full ',
                   ISNULL(CONVERT(VARCHAR(16),LastFullBackup,120),'NEVER'),
@@ -311,13 +306,15 @@ BEGIN
     DELETE FROM mon.DataLag       WHERE CollectedAt < @cut;
     DELETE FROM mon.DiskUsage     WHERE CollectedAt < @cut;
     DELETE FROM mon.ObjectSize    WHERE CollectedAt < @cut;
-    DELETE FROM mon.RedshiftCost  WHERE CollectedAt < @cut;
     DELETE FROM mon.BackupStatus  WHERE CollectedAt < @cut;
     DELETE FROM mon.JobFailure    WHERE CollectedAt < @cut;
     DELETE FROM mon.HealthMetric  WHERE CollectedAt < @cut;
     DELETE FROM mon.QuerySnapshot WHERE CollectedAt < @cut;
     DELETE FROM mon.WaitStats     WHERE CollectedAt < @cut;
     DELETE FROM mon.TableHealth   WHERE CollectedAt < @cut;
+    DELETE FROM mon.TopQueries    WHERE CollectedAt < @cut;
+    DELETE FROM mon.FailedLogin   WHERE CollectedAt < @cut;
+    DELETE FROM mon.LoginActivity WHERE CollectedAt < @cut;
     DELETE FROM cfg.CollectionLog WHERE RunAt       < @cut;
 END;
 GO

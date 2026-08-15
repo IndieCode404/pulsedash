@@ -35,11 +35,16 @@
     "routeToOwners": true,
     "//dbmailProfile": "Database Mail profile name (only used when transport='dbmail').",
     "dbmailProfile": "DBADash",
+    "//smtpHost": "Internal relay: smtp.corp.com / port 25 / useSsl false / no auth (ask your mail team). Office 365: smtp.office365.com / 587 / true / auth required.",
     "smtp": {
       "host": "smtp.corp.com",
       "port": 25,
       "from": "dbadash@corp.com",
-      "useSsl": false
+      "useSsl": false,
+      "//auth": "Leave user blank for an anonymous relay. If the relay needs credentials, set user and prefer passwordEnvVar over storing the password here.",
+      "user": "",
+      "passwordEnvVar": "DBADASH_SMTP_PWD",
+      "password": ""
     }
   },
 

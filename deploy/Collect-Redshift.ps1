@@ -25,15 +25,10 @@ $metricsFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'redshift\redshift_m
 $qDisk  = Get-SqlBlock -Path $metricsFile -Name 'DISK'
 $qFresh = Get-SqlBlock -Path $metricsFile -Name 'FRESHNESS'
 $qSize  = Get-SqlBlock -Path $metricsFile -Name 'TABLE_SIZE'
-$qCost  = Get-SqlBlock -Path $metricsFile -Name 'COST'
 $qThl   = Get-SqlBlock -Path $metricsFile -Name 'TABLE_HEALTH'
 $qAct   = Get-SqlBlock -Path $metricsFile -Name 'ACTIVITY'
 $qVit   = Get-SqlBlock -Path $metricsFile -Name 'RS_VITALS'
-$qScan  = Get-SqlBlock -Path $metricsFile -Name 'TABLE_SCAN'
-$qSpec  = Get-SqlBlock -Path $metricsFile -Name 'SPECTRUM'
 $qLogin = Get-SqlBlock -Path $metricsFile -Name 'RS_LOGINS'
-$qLock  = Get-SqlBlock -Path $metricsFile -Name 'LOCKS'
-$qCostQ = Get-SqlBlock -Path $metricsFile -Name 'COSTLY_QUERIES'
 
 function Get-RedshiftOdbcConnString($rs) {
     if ($rs.dsn) {
@@ -109,11 +104,6 @@ foreach ($rs in $clusters) {
         $size = Add-Envelope $size -ServerName $rs.clusterId -Platform 'Redshift' -CollectedAt $now
         $n3 = Write-BulkTable -ConnString $centralConn -Table $size -Destination 'mon.ObjectSize'
 
-        # cost drivers -> anomaly detection (ServerName only, no Platform column)
-        $cost = Invoke-OdbcQuery -ConnString $conn -Query $qCost
-        $cost = Add-Envelope $cost -ServerName $rs.clusterId -CollectedAt $now
-        $n4 = Write-BulkTable -ConnString $centralConn -Table $cost -Destination 'mon.RedshiftCost'
-
         # table health (vacuum/analyze debt)
         $thl = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qThl) -ServerName $rs.clusterId -CollectedAt $now
         $n5  = Write-BulkTable -ConnString $centralConn -Table $thl -Destination 'mon.TableHealth'
@@ -126,27 +116,14 @@ foreach ($rs in $clusters) {
         $vit = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qVit) -ServerName $rs.clusterId -Platform 'Redshift' -CollectedAt $now
         $n7  = Write-BulkTable -ConnString $centralConn -Table $vit -Destination 'mon.HealthMetric'
 
-        # last-scan times (stale-data detection), Spectrum by table, failed logins
-        $scn = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qScan) -ServerName $rs.clusterId -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $scn -Destination 'mon.TableScan')
-        $spc = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qSpec) -ServerName $rs.clusterId -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $spc -Destination 'mon.SpectrumScan')
+        # failed logins
         $flg = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qLogin) -ServerName $rs.clusterId -Platform 'Redshift' -CollectedAt $now
         [void](Write-BulkTable -ConnString $centralConn -Table $flg -Destination 'mon.FailedLogin')
 
-        # lock waits -> Advisor (long-block detection). Snapshotted every cycle;
-        # cfg.usp_Generate_Findings classifies anything waiting >= 30 min.
-        $lck = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qLock) -ServerName $rs.clusterId -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $lck -Destination 'mon.LockWait')
-
-        # per-query cost attribution: which queries drove Spectrum $ + scan volume
-        $cq = Add-Envelope (Invoke-OdbcQuery -ConnString $conn -Query $qCostQ) -ServerName $rs.clusterId -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $cq -Destination 'mon.QueryCost')
-
         Write-CollectionLog -CentralConn $centralConn -Collector 'Redshift' -ServerName $rs.clusterId `
-            -Status 'OK' -RowsLoaded ($n1+$n2+$n3+$n4+$n5+$n6+$n7) `
-            -Message "Disk=$n1 Freshness=$n2 Size=$n3 Cost=$n4 TblHealth=$n5 Act=$n6 Vit=$n7"
-        Write-Host ("  {0,-24} OK  (Disk={1} Fresh={2} Size={3} Cost={4} Health={5})" -f $rs.clusterId,$n1,$n2,$n3,$n4,$n5) -ForegroundColor Green
+            -Status 'OK' -RowsLoaded ($n1+$n2+$n3+$n5+$n6+$n7) `
+            -Message "Disk=$n1 Freshness=$n2 Size=$n3 TblHealth=$n5 Act=$n6 Vit=$n7"
+        Write-Host ("  {0,-24} OK  (Disk={1} Fresh={2} Size={3} Health={4})" -f $rs.clusterId,$n1,$n2,$n3,$n5) -ForegroundColor Green
     } catch {
         Write-CollectionLog -CentralConn $centralConn -Collector 'Redshift' -ServerName $rs.clusterId `
             -Status 'ERROR' -Message $_.Exception.Message

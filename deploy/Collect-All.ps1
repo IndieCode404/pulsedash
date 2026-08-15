@@ -208,172 +208,6 @@ WHERE is_user_process=1
 GROUP BY login_name, host_name, LEFT(program_name,160);
 "@
 
-# Patch / build / version - "what SP + CU am I on" (SERVERPROPERTY + host info).
-# Min supported target: SQL 2012. sys.dm_os_host_info is 2017+, so it is read via
-# isolated dynamic SQL wrapped in TRY/CATCH - on older targets host info comes
-# back NULL instead of compile-failing (which would abort the whole cycle).
-$Q_SERVERINFO = @"
-DECLARE @hostPlatform nvarchar(40) = NULL, @osVersion nvarchar(120) = NULL;
-BEGIN TRY
-    EXEC sys.sp_executesql
-        N'SELECT @hp = host_platform,
-                 @os = LEFT(host_distribution + '' '' + host_release, 120)
-          FROM sys.dm_os_host_info',
-        N'@hp nvarchar(40) OUTPUT, @os nvarchar(120) OUTPUT',
-        @hp = @hostPlatform OUTPUT, @os = @osVersion OUTPUT;
-END TRY BEGIN CATCH END CATCH;
-
-SELECT
-    ProductVersion     = CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(50)),
-    ProductLevel       = CAST(SERVERPROPERTY('ProductLevel') AS nvarchar(20)),
-    ProductUpdateLevel = CAST(SERVERPROPERTY('ProductUpdateLevel') AS nvarchar(20)),
-    Edition            = CAST(SERVERPROPERTY('Edition') AS nvarchar(80)),
-    ProductMajor       = CAST(SERVERPROPERTY('ProductMajorVersion') AS nvarchar(40)),
-    HostPlatform       = @hostPlatform,
-    OSVersion          = @osVersion,
-    IsClustered        = CAST(SERVERPROPERTY('IsClustered') AS bit),
-    IsHadrEnabled      = CAST(SERVERPROPERTY('IsHadrEnabled') AS bit),
-    StartTime          = (SELECT sqlserver_start_time FROM sys.dm_os_sys_info),
-    CpuCount           = (SELECT cpu_count FROM sys.dm_os_sys_info),
-    PhysicalMemoryMB   = (SELECT physical_memory_kb/1024 FROM sys.dm_os_sys_info);
-"@
-
-# Configuration drift - the sp_Blitz "Configuration" category, one row per check.
-$Q_CONFIG = @"
-;WITH c AS (SELECT name, CAST(value_in_use AS bigint) v FROM sys.configurations),
-      si AS (SELECT cpu_count FROM sys.dm_os_sys_info),
-      sa AS (SELECT name, is_disabled FROM sys.server_principals WHERE sid = 0x01)
-SELECT ConfigItem, CurrentValue, RecommendedValue, Status, Detail FROM (
-    SELECT 'max degree of parallelism' ConfigItem,
-           CAST((SELECT v FROM c WHERE name='max degree of parallelism') AS nvarchar(100)) CurrentValue,
-           '4-8 (not 0 on >8 cores)' RecommendedValue,
-           CASE WHEN (SELECT v FROM c WHERE name='max degree of parallelism')=0
-                 AND (SELECT cpu_count FROM si) > 8 THEN 'WARN' ELSE 'OK' END Status,
-           'MAXDOP 0 lets a single query grab every core.' Detail
-    UNION ALL SELECT 'cost threshold for parallelism',
-           CAST((SELECT v FROM c WHERE name='cost threshold for parallelism') AS nvarchar(100)), '>= 50',
-           CASE WHEN (SELECT v FROM c WHERE name='cost threshold for parallelism') <= 5 THEN 'WARN' ELSE 'OK' END,
-           'Default 5 sends even trivial queries parallel.'
-    UNION ALL SELECT 'max server memory (MB)',
-           CAST((SELECT v FROM c WHERE name='max server memory (MB)') AS nvarchar(100)), 'below physical RAM',
-           CASE WHEN (SELECT v FROM c WHERE name='max server memory (MB)') >= 2147483647 THEN 'WARN' ELSE 'OK' END,
-           'Unlimited lets SQL Server starve the OS.'
-    UNION ALL SELECT 'xp_cmdshell',
-           CAST((SELECT v FROM c WHERE name='xp_cmdshell') AS nvarchar(100)), '0 (off)',
-           CASE WHEN (SELECT v FROM c WHERE name='xp_cmdshell') = 1 THEN 'WARN' ELSE 'OK' END,
-           'Shell-command surface; leave off unless required.'
-    UNION ALL SELECT 'optimize for ad hoc workloads',
-           CAST((SELECT v FROM c WHERE name='optimize for ad hoc workloads') AS nvarchar(100)), '1 (on)',
-           CASE WHEN (SELECT v FROM c WHERE name='optimize for ad hoc workloads') = 0 THEN 'WARN' ELSE 'OK' END,
-           'Off = single-use plans bloat the plan cache.'
-    UNION ALL SELECT 'backup compression default',
-           CAST((SELECT v FROM c WHERE name='backup compression default') AS nvarchar(100)), '1 (on)',
-           CASE WHEN (SELECT v FROM c WHERE name='backup compression default') = 0 THEN 'WARN' ELSE 'OK' END,
-           'On = smaller, faster backups.'
-    UNION ALL SELECT 'sa login',
-           CASE WHEN (SELECT is_disabled FROM sa)=1 THEN 'disabled' ELSE 'ENABLED' END
-             + CASE WHEN (SELECT name FROM sa)='sa' THEN ', name=sa' ELSE ', renamed' END,
-           'disabled or renamed',
-           CASE WHEN (SELECT is_disabled FROM sa)=0 AND (SELECT name FROM sa)='sa' THEN 'WARN' ELSE 'OK' END,
-           'The well-known sa account is a brute-force target.'
-    UNION ALL SELECT 'sysadmin members',
-           CAST((SELECT COUNT(*) FROM sys.server_role_members m
-                 JOIN sys.server_principals r ON r.principal_id=m.role_principal_id
-                 WHERE r.name='sysadmin') AS nvarchar(100)), '<= 5',
-           CASE WHEN (SELECT COUNT(*) FROM sys.server_role_members m
-                      JOIN sys.server_principals r ON r.principal_id=m.role_principal_id
-                      WHERE r.name='sysadmin') > 5 THEN 'WARN' ELSE 'OK' END,
-           'Every sysadmin can do anything; keep the list short.'
-) x;
-"@
-
-# Access control - logins/groups classified by the access they hold.
-$Q_PRINCIPALS = @"
-;WITH rm AS (
-    SELECT m.member_principal_id, RoleName = r.name
-    FROM sys.server_role_members m
-    JOIN sys.server_principals r ON r.principal_id = m.role_principal_id
-)
-SELECT
-    PrincipalName = sp.name,
-    PrincipalType = sp.type_desc,
-    IsDisabled    = sp.is_disabled,
-    CreateDate    = CAST(sp.create_date AS datetime2(0)),
-    LastModified  = CAST(sp.modify_date AS datetime2(0)),
-    ServerRoles   = STUFF((SELECT ',' + RoleName FROM rm WHERE rm.member_principal_id = sp.principal_id
-                           FOR XML PATH('')), 1, 1, ''),
-    AccessType = CASE
-        WHEN sp.is_disabled = 1 THEN 'Disabled'
-        WHEN EXISTS (SELECT 1 FROM rm WHERE rm.member_principal_id=sp.principal_id AND rm.RoleName='sysadmin') THEN 'Sysadmin'
-        WHEN EXISTS (SELECT 1 FROM rm WHERE rm.member_principal_id=sp.principal_id AND rm.RoleName='securityadmin') THEN 'Security admin'
-        WHEN EXISTS (SELECT 1 FROM rm WHERE rm.member_principal_id=sp.principal_id
-                     AND rm.RoleName IN ('serveradmin','processadmin','setupadmin')) THEN 'Elevated'
-        WHEN EXISTS (SELECT 1 FROM rm WHERE rm.member_principal_id=sp.principal_id
-                     AND rm.RoleName IN ('dbcreator','bulkadmin','diskadmin')) THEN 'Standard'
-        ELSE 'Connect-only' END
-FROM sys.server_principals sp
-WHERE sp.type IN ('S','U','G')       -- SQL login / Windows login / Windows group
-  AND sp.name NOT LIKE '##%';        -- skip internal certificate principals
-"@
-
-# File I/O latency - the classic storage-bottleneck finder (avg ms/IO per file).
-$Q_FILEIO = @"
-SELECT TOP (50)
-    DatabaseName = DB_NAME(vfs.database_id),
-    FileType     = mf.type_desc,
-    ReadLatencyMs  = CAST(CASE WHEN vfs.num_of_reads  = 0 THEN 0 ELSE 1.0*vfs.io_stall_read_ms /vfs.num_of_reads  END AS decimal(10,1)),
-    WriteLatencyMs = CAST(CASE WHEN vfs.num_of_writes = 0 THEN 0 ELSE 1.0*vfs.io_stall_write_ms/vfs.num_of_writes END AS decimal(10,1)),
-    AvgLatencyMs   = CAST(CASE WHEN (vfs.num_of_reads+vfs.num_of_writes)=0 THEN 0
-                               ELSE 1.0*vfs.io_stall/(vfs.num_of_reads+vfs.num_of_writes) END AS decimal(10,1)),
-    SizeMB       = vfs.size_on_disk_bytes/1048576,
-    TotalReadMB  = vfs.num_of_bytes_read/1048576,
-    TotalWriteMB = vfs.num_of_bytes_written/1048576
-FROM sys.dm_io_virtual_file_stats(NULL,NULL) vfs
-JOIN sys.master_files mf ON mf.database_id=vfs.database_id AND mf.file_id=vfs.file_id
-ORDER BY CASE WHEN vfs.num_of_reads =0 THEN 0 ELSE 1.0*vfs.io_stall_read_ms /vfs.num_of_reads  END
-       + CASE WHEN vfs.num_of_writes=0 THEN 0 ELSE 1.0*vfs.io_stall_write_ms/vfs.num_of_writes END DESC;
-"@
-
-# Autogrowth events from the default trace (best-effort; empty set if trace off).
-$Q_AUTOGROWTH = @"
-BEGIN TRY
-    DECLARE @tp nvarchar(260) = (SELECT path FROM sys.traces WHERE is_default = 1);
-    IF @tp IS NULL RAISERROR('no default trace', 11, 1);
-    SELECT EventTime    = CAST(StartTime AS datetime2(0)),
-           DatabaseName = DatabaseName,
-           FileType     = CASE EventClass WHEN 92 THEN 'ROWS' WHEN 93 THEN 'LOG' ELSE '?' END,
-           GrowthMB     = CAST(IntegerData * 8 / 1024.0 AS decimal(10,1)),
-           DurationMs   = Duration / 1000
-    FROM sys.fn_trace_gettable(@tp, DEFAULT)
-    WHERE EventClass IN (92,93) AND StartTime > DATEADD(HOUR,-24,GETDATE());
-END TRY
-BEGIN CATCH
-    SELECT CAST(NULL AS datetime2(0)) EventTime, CAST(NULL AS nvarchar(128)) DatabaseName,
-           CAST(NULL AS varchar(20)) FileType, CAST(NULL AS decimal(10,1)) GrowthMB,
-           CAST(NULL AS bigint) DurationMs
-    WHERE 1 = 0;
-END CATCH
-"@
-
-# Index health - missing indexes + never-used indexes (both cheap DMV reads).
-$Q_INDEX = @"
-SELECT TOP (25)
-    DatabaseName = DB_NAME(mid.database_id),
-    Kind         = 'missing',
-    ObjectName   = mid.statement,
-    IndexName    = CAST(NULL AS nvarchar(256)),
-    Metric       = CONCAT('impact ', CAST(migs.avg_total_user_cost * migs.avg_user_impact * (migs.user_seeks + migs.user_scans) AS bigint),
-                          ' · seeks ', migs.user_seeks),
-    Recommendation = LEFT(CONCAT('CREATE INDEX IX_ ON ', mid.statement, ' (',
-                          ISNULL(mid.equality_columns,''),
-                          CASE WHEN mid.inequality_columns IS NOT NULL THEN ',' + mid.inequality_columns ELSE '' END, ')',
-                          CASE WHEN mid.included_columns IS NOT NULL THEN ' INCLUDE (' + mid.included_columns + ')' ELSE '' END), 600)
-FROM sys.dm_db_missing_index_groups mig
-JOIN sys.dm_db_missing_index_group_stats migs ON migs.group_handle = mig.index_group_handle
-JOIN sys.dm_db_missing_index_details  mid  ON mid.index_handle = mig.index_handle
-ORDER BY migs.avg_total_user_cost * migs.avg_user_impact * (migs.user_seeks + migs.user_scans) DESC;
-"@
-
 # ---- Resolve MSSQL targets from THREE sources ----------------------------
 #  1. CMS registered-server group          (Windows auth)
 #  2. config cms.mssqlInstances            (string = Windows auth,
@@ -454,26 +288,6 @@ foreach ($inst in @($targets.Keys)) {
         $la  = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_LOGINACT) -ServerName $inst -CollectedAt $now
         [void](Write-BulkTable -ConnString $centralConn -Table $la -Destination 'mon.LoginActivity')
 
-        # server audit: patch/build, config drift, access control, index health
-        $sinfo = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_SERVERINFO) -ServerName $inst -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $sinfo -Destination 'mon.ServerInfo')
-
-        $ccfg = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_CONFIG) -ServerName $inst -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $ccfg -Destination 'mon.ConfigAudit')
-
-        $prin = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_PRINCIPALS) -ServerName $inst -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $prin -Destination 'mon.SecurityPrincipal')
-
-        $idx = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_INDEX) -ServerName $inst -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $idx -Destination 'mon.IndexHealth')
-
-        # performance bottlenecks: file I/O latency + autogrowth events
-        $fio = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_FILEIO) -ServerName $inst -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $fio -Destination 'mon.FileIOStats')
-
-        $agr = Add-Envelope (Invoke-SqlQuery -ConnString $conn -Query $Q_AUTOGROWTH) -ServerName $inst -CollectedAt $now
-        [void](Write-BulkTable -ConnString $centralConn -Table $agr -Destination 'mon.AutoGrowth')
-
         Write-CollectionLog -CentralConn $centralConn -Collector 'MSSQL' -ServerName $inst -Status 'OK' `
             -RowsLoaded ($n1+$n2+$n3+$n4+$n5+$n6+$n7+$n8+$n9) `
             -Message "AG=$n1 Disk=$n2 Lag=$n3 Size=$n4 Bak=$n5 Job=$n6 Vit=$n7 Act=$n8 Wait=$n9"
@@ -493,20 +307,10 @@ if ($cfg.redshift) {
     catch { Write-Warning "Redshift collection failed (SQL Server data is unaffected): $($_.Exception.Message)" }
 }
 
-# ---- Post-process: forecast, cost anomaly, findings, alert evaluation, purge ----
-# NOTE: Generate_Findings must run BEFORE Evaluate_Alerts so CRIT findings are
-# available for the alert set to pick up (and dedup/auto-resolve) this cycle.
-Write-Host "Refreshing forecast, detecting cost anomalies, generating findings, evaluating alerts..." -ForegroundColor Cyan
+# ---- Post-process: forecast, alert evaluation, purge ----
+Write-Host "Refreshing forecast, evaluating alerts..." -ForegroundColor Cyan
 [void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Refresh_DiskForecast;")
-[void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Detect_CostAnomaly;")
-[void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Generate_Findings;")
 [void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Evaluate_Alerts;")
-
-# ---- Alerting (optional) ----
-if ($cfg.alerting -and $cfg.alerting.enabled) {
-    Write-Host "Sending alert notifications..." -ForegroundColor Cyan
-    & "$PSScriptRoot\Send-Alerts.ps1" -ConfigPath $ConfigPath
-}
 
 $ret = if ($cfg.retentionDays) { [int]$cfg.retentionDays } else { 90 }
 [void](Invoke-SqlNonQuery -ConnString $centralConn -Query "EXEC cfg.usp_Purge_History @RetentionDays=$ret;")

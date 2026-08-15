@@ -80,7 +80,29 @@ $mailParams = @{
     Subject = $subject; Body = $body; BodyAsHtml = $true
     UseSsl = [bool]$a.smtp.useSsl
 }
-Send-MailMessage @mailParams
+# PS 5.1 still negotiates TLS 1.0 by default; O365 and most modern relays require 1.2.
+if ($a.smtp.useSsl) { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 }
+
+# Optional SMTP authentication. Anonymous internal relays need none - leave
+# smtp.user blank. Otherwise prefer the env var over a password in the config.
+$smtpUser = [string]$a.smtp.user
+if ($smtpUser) {
+    $smtpPwd = if ($a.smtp.passwordEnvVar -and (Get-Item "env:$($a.smtp.passwordEnvVar)" -ErrorAction SilentlyContinue)) {
+                   (Get-Item "env:$($a.smtp.passwordEnvVar)").Value
+               } else { [string]$a.smtp.password }
+    if ([string]::IsNullOrEmpty($smtpPwd)) {
+        throw "alerting.smtp.user is set but no password found. Set the env var named in smtp.passwordEnvVar, or smtp.password."
+    }
+    $mailParams.Credential = New-Object System.Management.Automation.PSCredential(
+        $smtpUser, (ConvertTo-SecureString $smtpPwd -AsPlainText -Force))
+}
+
+try {
+    Send-MailMessage @mailParams
+} catch {
+    throw "SMTP send failed via $($a.smtp.host):$($a.smtp.port) - $($_.Exception.GetBaseException().Message)`n" +
+          "Check host/port, whether the relay allows this server, and (if authenticated) smtp.user + password."
+}
 Write-Host "Sent alert email to: $($to -join ', ')" -ForegroundColor Green
 
 # mark as notified so we don't resend

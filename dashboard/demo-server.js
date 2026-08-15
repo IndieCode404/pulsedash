@@ -26,77 +26,13 @@ let servers = [
 const DATA = {
   '/api/servers': () => [...servers].sort((a,b)=>(b.IsActive-a.IsActive)||a.ServerName.localeCompare(b.ServerName)),
   '/api/estate': () => [
-    { ServerName:'SQLPROD03', Environment:'PROD', Platform:'MSSQL', Backup:'CRIT', Disk:'CRIT', Jobs:'CRIT', HA:'NA', Index:'WARN', Config:'WARN', Perf:'WARN', Data:'OK', OverallStatus:'CRIT', OverallRank:0 },
-    { ServerName:'rs-analytics', Environment:'PROD', Platform:'Redshift', Backup:'NA', Disk:'WARN', Jobs:'NA', HA:'NA', Index:'CRIT', Config:'OK', Perf:'CRIT', Data:'CRIT', OverallStatus:'CRIT', OverallRank:0 },
-    { ServerName:'SQLPROD01\\AG', Environment:'PROD', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'WARN', HA:'WARN', Index:'WARN', Config:'OK', Perf:'OK', Data:'OK', OverallStatus:'WARN', OverallRank:1 },
-    { ServerName:'SQLPROD02\\AG', Environment:'PROD', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'OK', HA:'WARN', Index:'OK', Config:'OK', Perf:'OK', Data:'OK', OverallStatus:'WARN', OverallRank:1 },
-    { ServerName:'SQLUAT01', Environment:'UAT', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'OK', HA:'NA', Index:'OK', Config:'OK', Perf:'OK', Data:'OK', OverallStatus:'OK', OverallRank:2 },
+    { ServerName:'SQLPROD03', Environment:'PROD', Platform:'MSSQL', Backup:'CRIT', Disk:'CRIT', Jobs:'CRIT', HA:'NA', Perf:'WARN', Data:'OK', OverallStatus:'CRIT', OverallRank:0 },
+    { ServerName:'rs-analytics', Environment:'PROD', Platform:'Redshift', Backup:'NA', Disk:'WARN', Jobs:'NA', HA:'NA', Perf:'CRIT', Data:'CRIT', OverallStatus:'CRIT', OverallRank:0 },
+    { ServerName:'SQLPROD01\\AG', Environment:'PROD', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'WARN', HA:'WARN', Perf:'OK', Data:'OK', OverallStatus:'WARN', OverallRank:1 },
+    { ServerName:'SQLPROD02\\AG', Environment:'PROD', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'OK', HA:'WARN', Perf:'OK', Data:'OK', OverallStatus:'WARN', OverallRank:1 },
+    { ServerName:'SQLUAT01', Environment:'UAT', Platform:'MSSQL', Backup:'OK', Disk:'OK', Jobs:'OK', HA:'NA', Perf:'OK', Data:'OK', OverallStatus:'OK', OverallRank:2 },
   ],
-  '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, OpenFindings:2, HighLatencyFiles:2, ConfigWarnings:3, Sysadmins:7, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
-  '/api/fileio': () => [
-    { Status:'CRIT', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', FileType:'ROWS', ReadLatencyMs:68.4, WriteLatencyMs:12.1, AvgLatencyMs:41.2, SizeMB:512000, TotalReadMB:1840000, TotalWriteMB:210000 },
-    { Status:'WARN', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', FileType:'LOG', ReadLatencyMs:3.2, WriteLatencyMs:28.7, AvgLatencyMs:24.9, SizeMB:81920, TotalReadMB:9000, TotalWriteMB:640000 },
-    { Status:'OK', ServerName:'SQLPROD01\\AG', DatabaseName:'SalesDB', FileType:'ROWS', ReadLatencyMs:4.1, WriteLatencyMs:2.8, AvgLatencyMs:3.6, SizeMB:141312, TotalReadMB:920000, TotalWriteMB:180000 },
-    { Status:'OK', ServerName:'SQLPROD01\\AG', DatabaseName:'tempdb', FileType:'ROWS', ReadLatencyMs:1.9, WriteLatencyMs:2.2, AvgLatencyMs:2.0, SizeMB:40960, TotalReadMB:410000, TotalWriteMB:388000 },
-  ],
-  '/api/waitdelta': () => [
-    { ServerName:'SQLPROD03', WaitType:'PAGEIOLATCH_SH', DeltaMs:41200, WaitPct:52.1 },
-    { ServerName:'SQLPROD03', WaitType:'LCK_M_X', DeltaMs:22800, WaitPct:28.8 },
-    { ServerName:'SQLPROD03', WaitType:'WRITELOG', DeltaMs:9400, WaitPct:11.9 },
-    { ServerName:'SQLPROD01\\AG', WaitType:'HADR_SYNC_COMMIT', DeltaMs:6100, WaitPct:44.0 },
-    { ServerName:'SQLPROD01\\AG', WaitType:'CXPACKET', DeltaMs:3800, WaitPct:27.4 },
-  ],
-  '/api/autogrowth': () => [
-    { Status:'WARN', ServerName:'SQLPROD03', EventTime:new Date(Date.now()-3*36e5).toISOString().slice(0,19), DatabaseName:'FinanceDB', FileType:'ROWS', GrowthMB:1024.0, DurationMs:2380 },
-    { Status:'WARN', ServerName:'SQLPROD03', EventTime:new Date(Date.now()-3*36e5+4000).toISOString().slice(0,19), DatabaseName:'FinanceDB', FileType:'LOG', GrowthMB:512.0, DurationMs:1120 },
-    { Status:'OK', ServerName:'SQLPROD01\\AG', EventTime:new Date(Date.now()-30*36e5).toISOString().slice(0,19), DatabaseName:'SalesDB', FileType:'ROWS', GrowthMB:256.0, DurationMs:180 },
-  ],
-  '/api/serverinfo': () => [
-    { ServerName:'SQLPROD01\\AG', ProductMajor:'15', ProductVersion:'15.0.4360.2', ProductLevel:'RTM', ProductUpdateLevel:'CU18', PatchLevel:'v15.0.4360.2 · RTM-CU18', Edition:'Enterprise Edition (64-bit)', OSVersion:'Windows Server 2019 10.0', CpuCount:16, PhysicalMemoryMB:262144, IsClustered:true, IsHadrEnabled:true, StartTime:new Date(Date.now()-40*864e5).toISOString().slice(0,19) },
-    { ServerName:'SQLPROD03', ProductMajor:'15', ProductVersion:'15.0.2000.5', ProductLevel:'RTM', ProductUpdateLevel:'', PatchLevel:'v15.0.2000.5 · RTM', Edition:'Standard Edition (64-bit)', OSVersion:'Windows Server 2019 10.0', CpuCount:8, PhysicalMemoryMB:65536, IsClustered:false, IsHadrEnabled:false, StartTime:new Date(Date.now()-12*864e5).toISOString().slice(0,19) },
-  ],
-  '/api/configaudit': () => [
-    { Status:'WARN', ServerName:'SQLPROD03', ConfigItem:'max degree of parallelism', CurrentValue:'0', RecommendedValue:'4-8 (not 0 on >8 cores)', Detail:'MAXDOP 0 lets a single query grab every core.' },
-    { Status:'WARN', ServerName:'SQLPROD03', ConfigItem:'cost threshold for parallelism', CurrentValue:'5', RecommendedValue:'>= 50', Detail:'Default 5 sends even trivial queries parallel.' },
-    { Status:'WARN', ServerName:'SQLPROD03', ConfigItem:'sa login', CurrentValue:'ENABLED, name=sa', RecommendedValue:'disabled or renamed', Detail:'The well-known sa account is a brute-force target.' },
-    { Status:'OK', ServerName:'SQLPROD01\\AG', ConfigItem:'max server memory (MB)', CurrentValue:'245760', RecommendedValue:'below physical RAM', Detail:'Unlimited lets SQL Server starve the OS.' },
-    { Status:'OK', ServerName:'SQLPROD01\\AG', ConfigItem:'backup compression default', CurrentValue:'1', RecommendedValue:'1 (on)', Detail:'On = smaller, faster backups.' },
-  ],
-  '/api/accesscontrol': () => [
-    { ServerName:'SQLPROD01\\AG', AccessType:'Sysadmin', Principals:4, Status:'OK' },
-    { ServerName:'SQLPROD01\\AG', AccessType:'Elevated', Principals:2, Status:'OK' },
-    { ServerName:'SQLPROD01\\AG', AccessType:'Connect-only', Principals:31, Status:'OK' },
-    { ServerName:'SQLPROD03', AccessType:'Sysadmin', Principals:7, Status:'WARN' },
-    { ServerName:'SQLPROD03', AccessType:'Connect-only', Principals:14, Status:'OK' },
-  ],
-  '/api/principals': () => [
-    { ServerName:'SQLPROD03', PrincipalName:'CORP\\DBA-Team', PrincipalType:'WINDOWS_GROUP', AccessType:'Sysadmin', ServerRoles:'sysadmin', IsDisabled:false, CreateDate:new Date(Date.now()-400*864e5).toISOString().slice(0,19) },
-    { ServerName:'SQLPROD03', PrincipalName:'sa', PrincipalType:'SQL_LOGIN', AccessType:'Sysadmin', ServerRoles:'sysadmin', IsDisabled:false, CreateDate:new Date(Date.now()-900*864e5).toISOString().slice(0,19) },
-    { ServerName:'SQLPROD03', PrincipalName:'CORP\\jdoe', PrincipalType:'WINDOWS_LOGIN', AccessType:'Security admin', ServerRoles:'securityadmin', IsDisabled:false, CreateDate:new Date(Date.now()-120*864e5).toISOString().slice(0,19) },
-    { ServerName:'SQLPROD03', PrincipalName:'app_finance', PrincipalType:'SQL_LOGIN', AccessType:'Connect-only', ServerRoles:null, IsDisabled:false, CreateDate:new Date(Date.now()-200*864e5).toISOString().slice(0,19) },
-    { ServerName:'SQLPROD03', PrincipalName:'old_contractor', PrincipalType:'SQL_LOGIN', AccessType:'Disabled', ServerRoles:null, IsDisabled:true, CreateDate:new Date(Date.now()-500*864e5).toISOString().slice(0,19) },
-  ],
-  '/api/indexhealth': () => [
-    { Status:'WARN', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', Kind:'missing', ObjectName:'[FinanceDB].[dbo].[GLEntries]', IndexName:null, Metric:'impact 8421900 · seeks 184200', Recommendation:'CREATE INDEX IX_ ON [FinanceDB].[dbo].[GLEntries] ([Period],[CostCenter]) INCLUDE ([Amount])' },
-    { Status:'WARN', ServerName:'SQLPROD01\\AG', DatabaseName:'SalesDB', Kind:'missing', ObjectName:'[SalesDB].[dbo].[Orders]', IndexName:null, Metric:'impact 210400 · seeks 96500', Recommendation:'CREATE INDEX IX_ ON [SalesDB].[dbo].[Orders] ([CustomerID]) INCLUDE ([OrderDate],[Total])' },
-    { Status:'OK', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', Kind:'unused', ObjectName:'[FinanceDB].[dbo].[GLEntries]', IndexName:'IX_GLEntries_Legacy', Metric:'reads 0 · writes 1.2M', Recommendation:'Consider dropping: 0 reads, heavy write cost since last restart.' },
-  ],
-  '/api/findings': () => [
-    { FindingID:1, Platform:'Redshift', Category:'Blocking', Severity:'CRIT', ServerName:'rs-analytics', AgeMinutes:47,
-      Title:'Lock wait 47 min on public.fact_sales (PID 2841 blocked by PID 2790)',
-      Symptom:'PID 2841 (etl_user) has waited 47 min for a lock on public.fact_sales, held by PID 2790 (analyst_bob).',
-      RootCause:'Blocker PID 2790 holds the lock but has no running query - it is idle inside an open transaction. A session or app issued BEGIN and never COMMIT/ROLLBACK.',
-      Recommendation:'Confirm the owner of PID 2790 is safe to release, then: SELECT pg_terminate_backend(2790);',
-      Prevention:'Set an idle-session / statement timeout; make the app COMMIT or ROLLBACK deterministically; do not leave BEGIN open in ad-hoc SQL tools; alert on idle-in-transaction sessions.',
-      Evidence:'waiter_pid=2841 blocker_pid=2790 lock_mode=AccessExclusiveLock wait_min=47 idle_in_txn=1 conflicts_24h=0' },
-    { FindingID:2, Platform:'Redshift', Category:'Blocking', Severity:'CRIT', ServerName:'rs-analytics', AgeMinutes:36,
-      Title:'Lock wait 36 min on public.dim_customer (PID 2955 blocked by PID 2903)',
-      Symptom:'PID 2955 (bi_svc) has waited 36 min for a lock on public.dim_customer, held by PID 2903 (etl_user).',
-      RootCause:'2 serialization-isolation aborts on this table in the last 24h - concurrent transactions are writing overlapping rows and serializing on each other.',
-      Recommendation:'Retry the aborted transactions, and serialize the competing writers (one writer, or load a staging table then a single MERGE).',
-      Prevention:'Stagger ETL so writers to the same table do not overlap; funnel writes through a staging table + single MERGE; keep transactions small.',
-      Evidence:'waiter_pid=2955 blocker_pid=2903 lock_mode=ShareRowExclusiveLock wait_min=36 idle_in_txn=0 conflicts_24h=2 blocker_sql="INSERT INTO dim_customer SELECT * FROM stg_customer ..."' },
-  ],
+  '/api/overview': () => [{ Servers:4, MSSQLServers:3, RedshiftClusters:1, AGDatabases:2, AGUnhealthy:1, LagObjectsCrit:2, DisksCrit:1, DisksWarn:1, BackupsAtRisk:3, JobFailures24h:2, BlockedSessions:3, AppsWithoutOwner:1, LastCollection:new Date().toISOString().slice(0,19) }],
   '/api/backups': () => [
     { Status:'CRIT', ServerName:'SQLPROD03', DatabaseName:'FinanceDB', StateDesc:'ONLINE', RecoveryModel:'FULL', LastFullBackup:new Date(Date.now()-9*864e5).toISOString().slice(0,19), HoursSinceFull:216, LastLogBackup:new Date(Date.now()-9*36e5).toISOString().slice(0,19), LastGoodCheckDb:new Date(Date.now()-45*864e5).toISOString().slice(0,19), PageVerify:'CHECKSUM', IsAutoShrink:false },
     { Status:'CRIT', ServerName:'SQLPROD03', DatabaseName:'OldAppDB', StateDesc:'OFFLINE', RecoveryModel:'SIMPLE', LastFullBackup:new Date(Date.now()-40*864e5).toISOString().slice(0,19), HoursSinceFull:960, LastLogBackup:null, LastGoodCheckDb:null, PageVerify:'NONE', IsAutoShrink:false },
@@ -145,23 +81,6 @@ const DATA = {
     { ServerName:'SQLPROD03', LoginName:'etl_svc', HostName:'ETL01', ProgramName:'DTSExec', SessionCount:6, LastLogin:new Date(Date.now()-40*6e4).toISOString().slice(0,19) },
     { ServerName:'SQLPROD03', LoginName:'krisn_admin', HostName:'LT-KRISN', ProgramName:'SSMS', SessionCount:2, LastLogin:new Date(Date.now()-8*6e4).toISOString().slice(0,19) },
   ],
-  '/api/staletables': () => [
-    { Status:'CRIT', ServerName:'rs-analytics', TableName:'public.fact_sales_2019_bak', SizeGB:1840.0, LastScanned:null, DaysSinceScan:null, MonitoredDays:34, EstMonthlyUSD:44.16 },
-    { Status:'CRIT', ServerName:'rs-analytics', TableName:'public.stg_events_old', SizeGB:310.0, LastScanned:new Date(Date.now()-75*864e5).toISOString().slice(0,19), DaysSinceScan:75, MonitoredDays:34, EstMonthlyUSD:7.44 },
-    { Status:'WARN', ServerName:'rs-analytics', TableName:'public.dim_promo_archive', SizeGB:42.0, LastScanned:new Date(Date.now()-38*864e5).toISOString().slice(0,19), DaysSinceScan:38, MonitoredDays:34, EstMonthlyUSD:1.01 },
-    { Status:'OK', ServerName:'rs-analytics', TableName:'public.fact_sales', SizeGB:2400.0, LastScanned:new Date(Date.now()-2*36e5).toISOString().slice(0,19), DaysSinceScan:0, MonitoredDays:34, EstMonthlyUSD:57.60 },
-  ],
-  '/api/spectrum': () => [
-    { ServerName:'rs-analytics', ExternalTable:'ext.clickstream_raw', QueryCount:412, TBScanned:0.6210, EstCostUSD:3.11 },
-    { ServerName:'rs-analytics', ExternalTable:'ext.weblogs_2026', QueryCount:38, TBScanned:0.2480, EstCostUSD:1.24 },
-    { ServerName:'rs-analytics', ExternalTable:'(unknown)', QueryCount:6, TBScanned:0.0310, EstCostUSD:0.16 },
-  ],
-  '/api/costlyqueries': () => [
-    { Status:'CRIT', ServerName:'rs-analytics', QueryId:884213, UserName:'etl_user', StartTime:new Date(Date.now()-2*36e5).toISOString().slice(0,19), ElapsedSec:412, ScanGB:31200.0, SpectrumGB:2380.0, EstCostUSD:11.62, QueryText:'SELECT * FROM ext.clickstream_raw c JOIN fact_sales f ON ... WHERE event_date > ...  /* full external scan, no partition filter */' },
-    { Status:'WARN', ServerName:'rs-analytics', QueryId:884560, UserName:'bi_svc', StartTime:new Date(Date.now()-5*36e5).toISOString().slice(0,19), ElapsedSec:190, ScanGB:8100.0, SpectrumGB:510.0, EstCostUSD:2.49, QueryText:'CREATE TABLE stg_daily AS SELECT ... FROM ext.weblogs_2026 WHERE 1=1' },
-    { Status:'WARN', ServerName:'rs-analytics', QueryId:884901, UserName:'analyst_bob', StartTime:new Date(Date.now()-6*36e5).toISOString().slice(0,19), ElapsedSec:240, ScanGB:920.0, SpectrumGB:0.0, EstCostUSD:0.00, QueryText:'SELECT customer_id, SUM(amount) FROM fact_sales GROUP BY 1  /* no sort key, scans whole table */' },
-    { Status:'OK', ServerName:'rs-analytics', QueryId:885110, UserName:'dashboard_ro', StartTime:new Date(Date.now()-1*36e5).toISOString().slice(0,19), ElapsedSec:12, ScanGB:44.0, SpectrumGB:0.0, EstCostUSD:0.00, QueryText:'SELECT TOP 100 * FROM dim_customer WHERE region = ?' },
-  ],
   '/api/tablehealth': () => [
     { Status:'CRIT', ServerName:'rs-analytics', TableName:'public.fact_sales', UnsortedPct:62.4, StatsOffPct:18.0, TableRows:4820000000 },
     { Status:'WARN', ServerName:'rs-analytics', TableName:'public.stg_events', UnsortedPct:35.1, StatsOffPct:44.9, TableRows:91000000 },
@@ -188,18 +107,8 @@ const DATA = {
     { Platform:'Redshift', ServerName:'rs-analytics', ObjectType:'table', ObjectName:'public.fact_sales', CurrentGB:2400.0, DeltaGB:1950.0, GrowthGBPerDay:65.0 },
     { Platform:'MSSQL', ServerName:'SQLPROD01\\AG', ObjectType:'database', ObjectName:'SalesDB', CurrentGB:138.0, DeltaGB:63.0, GrowthGBPerDay:2.1 },
   ],
-  '/api/cost': () => [
-    { Severity:'CRIT', ServerName:'rs-analytics', MetricName:'bytes_scanned_tb_1d', MetricUnit:'TB', ObservedDay:new Date().toISOString().slice(0,10), Value:3.4, Baseline:0.48, ZScore:9.2, PctAboveBaseline:608.3 },
-    { Severity:'WARN', ServerName:'rs-analytics', MetricName:'spectrum_tb_1d', MetricUnit:'TB', ObservedDay:new Date().toISOString().slice(0,10), Value:0.9, Baseline:0.11, ZScore:6.8, PctAboveBaseline:718.2 },
-  ],
-  '/api/costkeys': () => [
-    { ServerName:'rs-analytics', MetricName:'bytes_scanned_tb_1d', MetricUnit:'TB' },
-    { ServerName:'rs-analytics', MetricName:'spectrum_tb_1d', MetricUnit:'TB' },
-    { ServerName:'rs-analytics', MetricName:'storage_gb', MetricUnit:'GB' },
-  ],
   '/api/alerts': () => [
     { AlertID:1, Severity:'CRIT', Category:'Disk', ServerName:'SQLPROD03', Message:'SQLPROD03 F:\\ at 96.5% - full in 9 days (add +1836 GB)', Owner:'Marco Diaz', FirstSeen:new Date(Date.now()-3600e3).toISOString().slice(0,19), NotifiedAt:new Date().toISOString().slice(0,19) },
-    { AlertID:2, Severity:'CRIT', Category:'Cost', ServerName:'rs-analytics', Message:'Cost spike: bytes_scanned_tb_1d = 3.4 (608.3% over baseline)', Owner:'Lena Park', FirstSeen:new Date(Date.now()-1800e3).toISOString().slice(0,19), NotifiedAt:null },
     { AlertID:3, Severity:'WARN', Category:'Lag', ServerName:'SQLPROD01\\AG', Message:'MSSQL AG:OrdersDB@SQLPROD02\\AG lag = 420s', Owner:'Priya Nair', FirstSeen:new Date(Date.now()-600e3).toISOString().slice(0,19), NotifiedAt:null },
   ],
 };
@@ -250,20 +159,6 @@ http.createServer(async (req,res)=>{
     res.setHeader('Content-Type','application/json'); return res.end('{"ok":true}');
   }
   if (url.startsWith('/api/growth?') || url==='/api/growth') { res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(growthSeries(req.url))); }
-  if (url.startsWith('/api/costtrend')) {
-    const q = new URL('http://x'+req.url).searchParams, m = q.get('metric')||'';
-    // 15-day baseline with a spike today for the scan metrics; steady climb for storage
-    const out = [];
-    for (let i=15;i>=0;i--){
-      const d = new Date(Date.now()-i*864e5).toISOString().slice(0,10);
-      let v;
-      if (m==='storage_gb') v = 6000+(15-i)*90;
-      else if (m==='spectrum_tb_1d') v = i===0?0.9:+(0.10+((i%2)*0.02)).toFixed(2);
-      else v = i===0?3.4:+(0.45+((i%3)*0.05)).toFixed(2);
-      out.push({ Day:d, Value:v, MetricUnit:m==='storage_gb'?'GB':'TB' });
-    }
-    res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(out));
-  }
   if (DATA[url]) { res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify(DATA[url]())); }
   let rel = url===''?'index.html':url.slice(1);
   const file = path.join(WWW, rel);

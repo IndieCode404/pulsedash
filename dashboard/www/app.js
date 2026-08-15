@@ -33,7 +33,7 @@ function table(rows, cols) {
 // domain column -> the tab that drills into it
 const ESTATE_DOMAINS = [
   ['Backup','health'], ['Disk','disk'], ['Jobs','health'], ['HA','ag'],
-  ['Index','activity'], ['Config','config'], ['Perf','activity'], ['Data','lag'],
+  ['Perf','activity'], ['Data','lag'],
 ];
 function estateChip(s) {
   const st = String(s || 'NA').toUpperCase();
@@ -75,10 +75,6 @@ async function loadKpis() {
     { lbl: 'Backups at risk',num: o.BackupsAtRisk,    cls: o.BackupsAtRisk > 0 ? 'crit' : 'ok', tab: 'health' },
     { lbl: 'Job failures 24h', num: o.JobFailures24h, cls: o.JobFailures24h > 0 ? 'warn' : 'ok', tab: 'health' },
     { lbl: 'Blocked sessions', num: o.BlockedSessions, cls: o.BlockedSessions > 0 ? 'crit' : 'ok', tab: 'activity' },
-    { lbl: 'Advisor findings', num: o.OpenFindings, cls: o.OpenFindings > 0 ? 'crit' : 'ok', tab: 'advisor' },
-    { lbl: 'I/O hotspots',   num: o.HighLatencyFiles, cls: o.HighLatencyFiles > 0 ? 'crit' : 'ok', tab: 'bottlenecks' },
-    { lbl: 'Config warnings', num: o.ConfigWarnings, cls: o.ConfigWarnings > 0 ? 'warn' : 'ok', tab: 'config' },
-    { lbl: 'Sysadmins',      num: o.Sysadmins, cls: o.Sysadmins > 5 ? 'warn' : 'ok', tab: 'access' },
     { lbl: 'No owner',       num: o.AppsWithoutOwner, cls: o.AppsWithoutOwner > 0 ? 'warn' : 'ok', tab: 'owners' },
   ];
   $('#kpis').innerHTML = cards.map(c =>
@@ -212,19 +208,9 @@ const VITAL_LABELS = {
 };
 
 async function loadActivity() {
-  const [vitals, act, waits, thl, topq, idx] = await Promise.all([
+  const [vitals, act, waits, thl, topq] = await Promise.all([
     api('/api/vitals'), api('/api/activity'), api('/api/waits'), api('/api/tablehealth'),
-    api('/api/topqueries').catch(() => []), api('/api/indexhealth').catch(() => [])]);
-  $('#indexHealthTable').innerHTML = table(idx, [
-    { h: 'Status',   k: 'Status', f: pill },
-    { h: 'Server',   k: 'ServerName' },
-    { h: 'Database', k: 'DatabaseName' },
-    { h: 'Kind',     k: 'Kind' },
-    { h: 'Object',   k: 'ObjectName', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 50))}${(v||'').length > 50 ? '…' : ''}</span>` },
-    { h: 'Index',    k: 'IndexName', f: v => v || '—' },
-    { h: 'Metric',   k: 'Metric' },
-    { h: 'Recommendation', k: 'Recommendation', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 80))}${(v||'').length > 80 ? '…' : ''}</span>` },
-  ]);
+    api('/api/topqueries').catch(() => [])]);
   $('#topQueriesTable').innerHTML = table(topq, [
     { h: 'Server',   k: 'ServerName' },
     { h: 'Database', k: 'DatabaseName' },
@@ -269,114 +255,6 @@ async function loadActivity() {
     { h: 'Unsorted %', k: 'UnsortedPct', f: v => v + '%' },
     { h: 'Stats off %', k: 'StatsOffPct', f: v => v + '%' },
     { h: 'Rows',    k: 'TableRows', f: num },
-  ]);
-}
-
-/* ---- advisor tab (findings: symptom → root cause → fix → prevent) ---- */
-async function loadAdvisor() {
-  const rows = await api('/api/findings').catch(() => []);
-  if (!rows || !rows.length) {
-    $('#advisorList').innerHTML = '<div class="empty">No findings — nothing needs investigation right now. 🎉</div>';
-    return;
-  }
-  $('#advisorList').innerHTML = rows.map(f => `
-    <div class="finding ${esc(f.Severity)}">
-      <div class="finding-head">
-        ${pill(f.Severity)}
-        <b>${esc(f.Title)}</b>
-        <span class="muted">· ${esc(f.Category)}${f.ServerName ? ' · ' + esc(f.ServerName) : ''}${f.AgeMinutes != null ? ' · open ' + fmtLag(f.AgeMinutes * 60) : ''}</span>
-      </div>
-      <div class="finding-body">
-        <div class="fr"><span class="fl">Symptom</span><span>${esc(f.Symptom)}</span></div>
-        <div class="fr"><span class="fl">Root cause</span><span>${esc(f.RootCause)}</span></div>
-        <div class="fr fix"><span class="fl">Fix now</span><span>${esc(f.Recommendation)}</span></div>
-        <div class="fr prevent"><span class="fl">Prevent</span><span>${esc(f.Prevention)}</span></div>
-        ${f.Evidence ? `<div class="fr"><span class="fl">Evidence</span><code>${esc(f.Evidence)}</code></div>` : ''}
-      </div>
-    </div>`).join('');
-}
-
-/* ---- bottlenecks tab (file I/O latency + wait deltas + autogrowth) ---- */
-async function loadBottlenecks() {
-  const [fio, wd, grow] = await Promise.all([
-    api('/api/fileio').catch(() => []), api('/api/waitdelta').catch(() => []),
-    api('/api/autogrowth').catch(() => [])]);
-  const latCell = v => v == null ? '—' : `${v} ms`;
-  $('#fileIoTable').innerHTML = table(fio, [
-    { h: 'Status',   k: 'Status', f: pill },
-    { h: 'Server',   k: 'ServerName' },
-    { h: 'Database', k: 'DatabaseName' },
-    { h: 'File',     k: 'FileType' },
-    { h: 'Read latency',  k: 'ReadLatencyMs',  f: latCell },
-    { h: 'Write latency', k: 'WriteLatencyMs', f: latCell },
-    { h: 'Size', k: 'SizeMB', f: v => v == null ? '—' : (v / 1024).toFixed(1) + ' GB' },
-    { h: 'Read', k: 'TotalReadMB', f: v => v == null ? '—' : (v / 1024).toFixed(1) + ' GB' },
-    { h: 'Written', k: 'TotalWriteMB', f: v => v == null ? '—' : (v / 1024).toFixed(1) + ' GB' },
-  ]);
-  $('#waitDeltaTable').innerHTML = table(wd, [
-    { h: 'Server',   k: 'ServerName' },
-    { h: 'Wait type', k: 'WaitType' },
-    { h: 'Δ this cycle', k: 'DeltaMs', f: v => v == null ? '—' : (v >= 1000 ? (v / 1000).toFixed(1) + 's' : v + 'ms') },
-    { h: '% of window', k: 'WaitPct', f: v => v == null ? '—' : `<span class="bar${v >= 40 ? ' warn' : ''}"><i style="width:${Math.min(v,100)}%"></i></span>${v}%` },
-  ]);
-  $('#autoGrowthTable').innerHTML = table(grow, [
-    { h: 'Status',   k: 'Status', f: pill },
-    { h: 'Server',   k: 'ServerName' },
-    { h: 'When',     k: 'EventTime', f: fmtDt },
-    { h: 'Database', k: 'DatabaseName' },
-    { h: 'File',     k: 'FileType' },
-    { h: 'Grew by',  k: 'GrowthMB', f: v => v == null ? '—' : v + ' MB' },
-    { h: 'Stalled',  k: 'DurationMs', f: v => v == null ? '—' : (v >= 1000 ? (v / 1000).toFixed(1) + 's' : v + 'ms') },
-  ]);
-}
-
-/* ---- server & config tab (patch level + configuration drift) ---- */
-async function loadConfig() {
-  const [info, cfg] = await Promise.all([
-    api('/api/serverinfo').catch(() => []), api('/api/configaudit').catch(() => [])]);
-  $('#serverInfoTable').innerHTML = table(info, [
-    { h: 'Server',   k: 'ServerName' },
-    { h: 'Version',  k: 'ProductMajor', f: (v, r) => v ? `SQL major ${esc(v)}` : (r.Edition || '—') },
-    { h: 'Patch level', k: 'PatchLevel', f: v => `<b>${esc(v)}</b>` },
-    { h: 'Edition',  k: 'Edition' },
-    { h: 'OS',       k: 'OSVersion' },
-    { h: 'Cores',    k: 'CpuCount', f: num },
-    { h: 'RAM (GB)', k: 'PhysicalMemoryMB', f: v => v == null ? '—' : Math.round(v / 1024) },
-    { h: 'Clustered',k: 'IsClustered', f: v => v ? 'yes' : 'no' },
-    { h: 'AG enabled', k: 'IsHadrEnabled', f: v => v ? 'yes' : 'no' },
-    { h: 'Up since', k: 'StartTime', f: fmtDt },
-  ]);
-  $('#configAuditTable').innerHTML = table(cfg, [
-    { h: 'Status',   k: 'Status', f: pill },
-    { h: 'Server',   k: 'ServerName' },
-    { h: 'Setting',  k: 'ConfigItem' },
-    { h: 'Current',  k: 'CurrentValue', f: v => `<b>${esc(v)}</b>` },
-    { h: 'Recommended', k: 'RecommendedValue' },
-    { h: 'Why it matters', k: 'Detail' },
-  ]);
-}
-
-/* ---- access control tab (principals by access type) ---- */
-async function loadAccess() {
-  const [roll, principals] = await Promise.all([
-    api('/api/accesscontrol').catch(() => []), api('/api/principals').catch(() => [])]);
-  // rollup: a KPI-style card per access type (per server)
-  $('#accessRollup').innerHTML = roll.length ? roll.map(r => {
-    const cls = r.Status === 'WARN' ? 'warn' : r.AccessType === 'Sysadmin' ? 'crit' : '';
-    return `<div class="kpi ${cls}"><div class="num">${r.Principals}</div>
-       <div class="lbl">${esc(r.AccessType)}</div>
-       <div class="muted" style="font-size:11px;margin-top:2px">${esc(r.ServerName)}</div></div>`;
-  }).join('') : '<div class="empty">No principals collected yet.</div>';
-  $('#principalsTable').innerHTML = table(principals, [
-    { h: 'Access',   k: 'AccessType', f: v => {
-        const cls = v === 'Sysadmin' ? 'CRIT' : (v === 'Security admin' || v === 'Elevated') ? 'WARN' : 'OK';
-        return `<span class="pill ${cls}">${esc(v)}</span>`; } },
-    { h: 'Server',   k: 'ServerName' },
-    { h: 'Principal',k: 'PrincipalName' },
-    { h: 'Type',     k: 'PrincipalType', f: v => esc((v || '').replace('_', ' ').toLowerCase()) },
-    { h: 'Server roles', k: 'ServerRoles', f: v => v ? esc(v) : '—' },
-    { h: 'Disabled', k: 'IsDisabled', f: v => v ? '<b>yes</b>' : 'no' },
-    { h: 'Created',  k: 'CreateDate', f: v => v ? new Date(v + 'Z').toLocaleDateString() : '—' },
   ]);
 }
 
@@ -438,73 +316,6 @@ async function drawGrowth() {
   const qs = `platform=${encodeURIComponent(k.Platform)}&server=${encodeURIComponent(k.ServerName)}&object=${encodeURIComponent(k.ObjectName)}`;
   const pts = await api('/api/growth?' + qs);
   $('#growthChart').innerHTML = lineChart(pts, 'GB');
-}
-
-let costKeys = [];
-async function loadCost() {
-  costKeys = await api('/api/costkeys').catch(() => []);
-  const sel = $('#costKey');
-  if (!costKeys.length) {
-    sel.innerHTML = '';
-    $('#costChart').innerHTML = '<div class="empty">No cost-driver history collected yet.</div>';
-  } else {
-    if (!sel.dataset.filled) {
-      sel.innerHTML = costKeys.map((k, i) =>
-        `<option value="${i}">${esc(k.ServerName)} · ${esc(k.MetricName)}${k.MetricUnit ? ' (' + esc(k.MetricUnit) + ')' : ''}</option>`).join('');
-      sel.dataset.filled = '1';
-    }
-    await drawCostTrend();
-  }
-  const [rows, stale, spectrum, costly] = await Promise.all([
-    api('/api/cost'), api('/api/staletables').catch(() => []), api('/api/spectrum').catch(() => []),
-    api('/api/costlyqueries').catch(() => [])]);
-  $('#costlyQueriesTable').innerHTML = table(costly, [
-    { h: 'Status',   k: 'Status', f: pill },
-    { h: 'Cluster',  k: 'ServerName' },
-    { h: 'Query',    k: 'QueryId' },
-    { h: 'User',     k: 'UserName' },
-    { h: 'When',     k: 'StartTime', f: fmtDt },
-    { h: 'Runtime',  k: 'ElapsedSec', f: v => v == null ? '—' : fmtLag(v) },
-    { h: 'Scanned',  k: 'ScanGB', f: v => v == null ? '—' : v + ' GB' },
-    { h: 'Spectrum', k: 'SpectrumGB', f: v => v == null ? '—' : v + ' GB' },
-    { h: 'Est cost', k: 'EstCostUSD', f: v => v == null ? '—' : '$' + v },
-    { h: 'SQL',      k: 'QueryText', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 70))}${(v||'').length > 70 ? '…' : ''}</span>` },
-  ]);
-  $('#staleTablesTable').innerHTML = table(stale, [
-    { h: 'Status',  k: 'Status', f: pill },
-    { h: 'Cluster', k: 'ServerName' },
-    { h: 'Table',   k: 'TableName' },
-    { h: 'Size',    k: 'SizeGB', f: v => v + ' GB' },
-    { h: 'Last read', k: 'LastScanned', f: v => v ? new Date(v + 'Z').toLocaleDateString() : 'never seen' },
-    { h: 'Days idle', k: 'DaysSinceScan', f: v => v == null ? '∞' : v },
-    { h: 'Watched',  k: 'MonitoredDays', f: v => v + 'd' },
-    { h: 'Storage $/mo', k: 'EstMonthlyUSD', f: v => '$' + v },
-  ]);
-  $('#spectrumTable').innerHTML = table(spectrum, [
-    { h: 'Cluster',  k: 'ServerName' },
-    { h: 'External table', k: 'ExternalTable' },
-    { h: 'Queries 24h', k: 'QueryCount', f: num },
-    { h: 'TB scanned', k: 'TBScanned' },
-    { h: 'Est cost 24h', k: 'EstCostUSD', f: v => '$' + v },
-  ]);
-  $('#costTable').innerHTML = table(rows, [
-    { h: 'Severity', k: 'Severity', f: pill },
-    { h: 'Cluster',  k: 'ServerName' },
-    { h: 'Metric',   k: 'MetricName' },
-    { h: 'Day',      k: 'ObservedDay', f: v => v ? String(v).slice(0,10) : '—' },
-    { h: 'Value',    k: 'Value', f: (v, r) => `${v} ${esc(r.MetricUnit || '')}` },
-    { h: 'Baseline', k: 'Baseline', f: (v, r) => `${v} ${esc(r.MetricUnit || '')}` },
-    { h: 'Z-score',  k: 'ZScore' },
-    { h: '% over',   k: 'PctAboveBaseline', f: v => v == null ? '—' : '+' + v + '%' },
-  ]);
-}
-
-async function drawCostTrend() {
-  const k = costKeys[Number($('#costKey').value) || 0];
-  if (!k) return;
-  const qs = `server=${encodeURIComponent(k.ServerName)}&metric=${encodeURIComponent(k.MetricName)}`;
-  const pts = await api('/api/costtrend?' + qs);
-  $('#costChart').innerHTML = lineChart(pts, k.MetricUnit || '', 'Value');
 }
 
 async function loadAlerts() {
@@ -657,9 +468,8 @@ async function saveServer() {
 function refreshActive() {
   const t = $('.tab.active').dataset.tab;
   ({ estate: loadEstate, ag: loadAg, lag: loadLag, disk: loadDisk, growth: loadGrowth,
-     health: loadHealth, activity: loadActivity, advisor: loadAdvisor, bottlenecks: loadBottlenecks,
-     config: loadConfig, access: loadAccess,
-     cost: loadCost, alerts: loadAlerts, owners: loadOwners, servers: loadServers }[t])();
+     health: loadHealth, activity: loadActivity,
+     alerts: loadAlerts, owners: loadOwners, servers: loadServers }[t])();
   loadKpis();
 }
 
@@ -695,7 +505,6 @@ $('#kpis').addEventListener('keydown', e => {
 
 $('#refreshBtn').addEventListener('click', refreshActive);
 $('#growthKey').addEventListener('change', drawGrowth);
-$('#costKey').addEventListener('change', drawCostTrend);
 $('#newOwnerBtn').addEventListener('click', () => { clearForm(); showForm(true); });
 $('#cancelOwnerBtn').addEventListener('click', () => showForm(false));
 $('#saveOwnerBtn').addEventListener('click', saveOwner);

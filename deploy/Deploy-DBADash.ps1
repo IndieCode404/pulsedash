@@ -96,19 +96,14 @@ $scripts = @(
     '05_views_dashboard.sql',
     '06_appowners_crud.sql',
     '08_growth.sql',
-    '09_cost.sql',
     '10_alerts.sql',
     '12_health.sql',
     '14_servers_admin.sql',
-    '15_perf_audit_cost.sql',
+    '15_perf_logins.sql',
     '16_connections.sql',
-    '17_advisor.sql',
-    '18_server_audit.sql',
-    '19_bottlenecks.sql',
-    '20_query_cost.sql',
     '21_estate.sql'
 )
-if ($WithDemoData) { $scripts += '07_seed_demo.sql','11_seed_growth_cost.sql','13_seed_health.sql' }
+if ($WithDemoData) { $scripts += '07_seed_demo.sql' }
 
 Write-Host "Deploying DBADash to [$Instance]..." -ForegroundColor Cyan
 foreach ($s in $scripts) {
