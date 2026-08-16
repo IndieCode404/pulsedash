@@ -1,0 +1,547 @@
+/* DBADash front-end — talks to the PowerShell JSON API in Start-Dashboard.ps1 */
+'use strict';
+
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+// X-DBADash marks the request as same-origin app traffic; the server rejects any
+// POST without it (CSRF guard). A cross-site page can't set it without a preflight.
+const api = (p, opt = {}) => fetch(p, { ...opt, headers: { 'X-DBADash': '1', ...(opt.headers || {}) } }).then(r => r.json());
+const esc = s => (s == null ? '' : String(s)).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const pill = s => `<span class="pill ${s}">${s}</span>`;
+const num  = n => (n == null ? '—' : Number(n).toLocaleString());
+
+function fmtLag(sec) {
+  if (sec == null) return '—';
+  sec = Number(sec);
+  if (sec < 90) return sec + 's';
+  if (sec < 5400) return (sec / 60).toFixed(1) + 'm';
+  return (sec / 3600).toFixed(1) + 'h';
+}
+
+function table(rows, cols) {
+  if (!rows || !rows.length) return '<div class="empty">No data yet — run the collector or load the demo seed.</div>';
+  const head = '<tr>' + cols.map(c => `<th>${c.h}</th>`).join('') + '</tr>';
+  const body = rows.map(r => {
+    const sev = r.Status || r.Severity;
+    const cls = (sev === 'CRIT' || sev === 'WARN') ? ` class="row-${sev}"` : '';
+    return `<tr${cls}>` + cols.map(c => `<td>${c.f ? c.f(r[c.k], r) : esc(r[c.k])}</td>`).join('') + '</tr>';
+  }).join('');
+  return `<table>${head}${body}</table>`;
+}
+
+/* ---- estate grid (landing: server × domain RAG matrix) ---- */
+// domain column -> the tab that drills into it
+const ESTATE_DOMAINS = [
+  ['Backup','health'], ['Disk','disk'], ['Jobs','health'], ['HA','ag'],
+  ['Perf','activity'], ['Data','lag'],
+];
+function estateChip(s) {
+  const st = String(s || 'NA').toUpperCase();
+  const lbl = st === 'OK' ? 'OK' : st === 'WARN' ? 'WRN' : st === 'CRIT' ? 'CRT' : '–';
+  return `<span class="cellchip ${st === 'OK' || st === 'WARN' || st === 'CRIT' ? st : 'NA'}">${lbl}</span>`;
+}
+async function loadEstate() {
+  const el = $('#estateGrid');
+  const rows = await api('/api/estate').catch(() => []);
+  if (!rows || !rows.length) { el.innerHTML = '<div class="empty">No estate data yet — run a collection, then refresh.</div>'; return; }
+  const rank = { CRIT: 0, WARN: 1, OK: 2 };
+  rows.sort((a, b) => (a.OverallRank ?? 3) - (b.OverallRank ?? 3) || String(a.ServerName).localeCompare(String(b.ServerName)));
+  const head = '<tr><th>Server</th><th>Env</th>' + ESTATE_DOMAINS.map(d => `<th>${d[0]}</th>`).join('') + '</tr>';
+  const body = rows.map(r => {
+    const ov = String(r.OverallStatus || 'OK').toUpperCase();
+    return `<tr>
+      <td class="srvcell"><span class="dot ${ov === 'OK' || ov === 'WARN' || ov === 'CRIT' ? ov : 'OK'}"></span><b>${esc(r.ServerName)}</b></td>
+      <td><span class="tag">${esc(r.Environment || '—')}</span></td>
+      ${ESTATE_DOMAINS.map(d => `<td class="est-cell" data-tab="${d[1]}" title="${d[0]}: ${esc(r[d[0]] || 'n/a')} — click to open">${estateChip(r[d[0]])}</td>`).join('')}
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<div class="tablewrap estate"><table>${head}${body}</table></div>`;
+}
+
+/* ---- KPI strip ---- */
+async function loadKpis() {
+  const [o, alerts] = await Promise.all([
+    api('/api/overview').then(r => r[0] || {}),
+    api('/api/alerts').then(r => r || []).catch(() => []),
+  ]);
+  const activeAlerts = alerts.length;
+  // tab = where clicking the card takes you (the place you can act on it)
+  const cards = [
+    { lbl: 'Servers',        num: o.Servers,          cls: '',  tab: 'servers' },
+    { lbl: 'Active alerts',  num: activeAlerts,       cls: activeAlerts > 0 ? 'crit' : 'ok', tab: 'alerts' },
+    { lbl: 'AG unhealthy',   num: o.AGUnhealthy,      cls: o.AGUnhealthy > 0 ? 'crit' : 'ok', tab: 'ag' },
+    { lbl: 'Lag critical',   num: o.LagObjectsCrit,   cls: o.LagObjectsCrit > 0 ? 'crit' : 'ok', tab: 'lag' },
+    { lbl: 'Disks critical', num: o.DisksCrit,        cls: o.DisksCrit > 0 ? 'crit' : 'ok', tab: 'disk' },
+    { lbl: 'Backups at risk',num: o.BackupsAtRisk,    cls: o.BackupsAtRisk > 0 ? 'crit' : 'ok', tab: 'health' },
+    { lbl: 'Job failures 24h', num: o.JobFailures24h, cls: o.JobFailures24h > 0 ? 'warn' : 'ok', tab: 'health' },
+    { lbl: 'Blocked sessions', num: o.BlockedSessions, cls: o.BlockedSessions > 0 ? 'crit' : 'ok', tab: 'activity' },
+    { lbl: 'No owner',       num: o.AppsWithoutOwner, cls: o.AppsWithoutOwner > 0 ? 'warn' : 'ok', tab: 'owners' },
+  ];
+  $('#kpis').innerHTML = cards.map(c =>
+    `<div class="kpi ${c.cls}" data-tab="${c.tab}" role="button" tabindex="0" title="Open ${c.lbl}">
+       <div class="num">${c.num ?? '—'}</div><div class="lbl">${c.lbl}</div></div>`).join('');
+  $('#lastRun').textContent = o.LastCollection ? 'last collection: ' + new Date(o.LastCollection + 'Z').toLocaleString() : 'no collections yet';
+}
+
+/* ---- tabs ---- */
+async function loadAg() {
+  const rows = await api('/api/ag');
+  $('#agTable').innerHTML = table(rows, [
+    { h: 'Status',   k: 'Status', f: pill },
+    { h: 'AG',       k: 'AGName' },
+    { h: 'Database', k: 'DatabaseName' },
+    { h: 'Replica',  k: 'ReplicaServer' },
+    { h: 'Role',     k: 'Role' },
+    { h: 'Sync state', k: 'SyncState' },
+    { h: 'Health',   k: 'SyncHealth' },
+    { h: 'Send Q (KB)', k: 'LogSendQueueKB', f: num },
+    { h: 'Redo Q (KB)', k: 'RedoQueueKB',    f: num },
+  ]);
+}
+
+async function loadLag() {
+  const rows = await api('/api/lag');
+  $('#lagTable').innerHTML = table(rows, [
+    { h: 'Status',   k: 'Status', f: pill },
+    { h: 'Platform', k: 'Platform' },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Object',   k: 'ObjectName' },
+    { h: 'Metric',   k: 'Metric' },
+    { h: 'Lag',      k: 'LagSeconds', f: fmtLag },
+    { h: 'Detail',   k: 'Detail' },
+  ]);
+}
+
+async function loadDisk() {
+  const rows = await api('/api/disk');
+  $('#diskTable').innerHTML = table(rows, [
+    { h: 'Severity', k: 'Severity', f: pill },
+    { h: 'Platform', k: 'Platform' },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Volume',   k: 'VolumeName' },
+    { h: 'Used', k: 'UsedPct', f: (v, r) => {
+        const p = Number(v) || 0, cls = p >= 90 ? 'crit' : p >= 75 ? 'warn' : '';
+        return `<span class="bar ${cls}"><i style="width:${Math.min(p,100)}%"></i></span>${p}% <span class="muted">(${r.UsedGB}/${r.TotalGB} GB)</span>`;
+      } },
+    { h: 'Growth/day', k: 'GrowthGBPerDay', f: v => v == null ? '—' : v + ' GB' },
+    { h: 'Days to full', k: 'DaysToFull', f: v => v == null ? '∞' : v },
+    { h: 'Projected full', k: 'ProjectedFullDate', f: v => v ? String(v).slice(0,10) : '—' },
+    { h: 'Add', k: 'RecommendedAddGB', f: v => v == null ? '—' : `+${v} GB` },
+  ]);
+}
+
+async function loadOwners() {
+  const rows = await api('/api/owners');
+  // suggest real inventory servers in the owner form (still free-typeable)
+  api('/api/servers').then(srv => {
+    const dl = $('#f_serverList');
+    if (dl && srv) dl.innerHTML = srv.map(s => `<option value="${esc(s.ServerName)}"></option>`).join('');
+  }).catch(() => {});
+  $('#ownersTable').innerHTML = table(rows, [
+    { h: 'Tier',    k: 'Criticality', f: v => `<span class="tier ${v}">${v}</span>` },
+    { h: 'Server',  k: 'ServerName' },
+    { h: 'Database',k: 'DatabaseName' },
+    { h: 'App',     k: 'AppName' },
+    { h: 'Primary', k: 'PrimaryOwner' },
+    { h: 'Secondary', k: 'SecondaryOwner' },
+    { h: 'Team',    k: 'Team' },
+    { h: 'Email',   k: 'Email', f: v => v ? `<a class="link" href="mailto:${esc(v)}">${esc(v)}</a>` : '—' },
+    { h: 'On-call', k: 'OnCallPhone' },
+    { h: '', k: 'AppOwnerID', f: (v, r) =>
+        `<span class="link" onclick='editOwner(${JSON.stringify(r).replace(/'/g,"&#39;")})'>edit</span> ·
+         <span class="link danger" onclick="delOwner(${v})">del</span>` },
+  ]);
+}
+
+/* ---- health tab (backups + job failures) ---- */
+const fmtDt = v => v ? new Date(v + 'Z').toLocaleString() : 'NEVER';
+const ago = v => v == null ? '—' : v;
+
+async function loadHealth() {
+  const [backups, jobs, flogins, logins] = await Promise.all([
+    api('/api/backups'), api('/api/jobs'),
+    api('/api/failedlogins').catch(() => []), api('/api/logins').catch(() => [])]);
+  $('#failedLoginsTable').innerHTML = table(flogins, [
+    { h: 'Platform', k: 'Platform' },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'When',     k: 'EventTime', f: fmtDt },
+    { h: 'Detail',   k: 'Message' },
+  ]);
+  $('#loginsTable').innerHTML = table(logins, [
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Login',    k: 'LoginName' },
+    { h: 'Host',     k: 'HostName' },
+    { h: 'Program',  k: 'ProgramName' },
+    { h: 'Sessions', k: 'SessionCount', f: num },
+    { h: 'Last login', k: 'LastLogin', f: fmtDt },
+  ]);
+  $('#backupsTable').innerHTML = table(backups, [
+    { h: 'Status',   k: 'Status', f: pill },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Database', k: 'DatabaseName' },
+    { h: 'State',    k: 'StateDesc' },
+    { h: 'Recovery', k: 'RecoveryModel' },
+    { h: 'Last full', k: 'LastFullBackup', f: fmtDt },
+    { h: 'Hrs since full', k: 'HoursSinceFull', f: ago },
+    { h: 'Last log', k: 'LastLogBackup', f: (v, r) => r.RecoveryModel === 'SIMPLE' ? 'n/a' : fmtDt(v) },
+    { h: 'Last good CHECKDB', k: 'LastGoodCheckDb', f: fmtDt },
+    { h: 'Page verify', k: 'PageVerify', f: v => v == null ? '—' : (v === 'CHECKSUM' ? v : `<b>${esc(v)}</b> ⚠`) },
+    { h: 'Auto-shrink', k: 'IsAutoShrink', f: v => v ? '<b>ON</b> ⚠' : 'off' },
+  ]);
+  $('#jobsTable').innerHTML = table(jobs, [
+    { h: 'Server', k: 'ServerName' },
+    { h: 'Job',    k: 'JobName' },
+    { h: 'Step',   k: 'StepName' },
+    { h: 'Failed at', k: 'RunAt', f: fmtDt },
+    { h: 'Message', k: 'Message', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 90))}${(v||'').length > 90 ? '…' : ''}</span>` },
+  ]);
+}
+
+/* ---- activity tab (vitals + queries + waits + redshift table health) ---- */
+const VITAL_LABELS = {
+  page_life_expectancy: 'Page life expectancy (s)', memory_grants_pending: 'Memory grants pending',
+  user_sessions: 'User sessions', blocked_sessions: 'Blocked sessions', uptime_hours: 'Uptime (h)',
+  queued_queries: 'Queued queries (WLM)', db_connections: 'Connections', load_errors_24h: 'Load errors (24h)',
+  cpu_pct: 'CPU %', suspect_pages: 'Suspect pages (corruption!)', deadlocks_total: 'Deadlocks (since restart)',
+  tempdb_used_gb: 'TempDB used (GB)', tempdb_version_store_gb: 'TempDB version store (GB)',
+  max_vlf_count: 'Worst VLF count (any DB)',
+};
+
+async function loadActivity() {
+  const [vitals, act, waits, thl, topq] = await Promise.all([
+    api('/api/vitals'), api('/api/activity'), api('/api/waits'), api('/api/tablehealth'),
+    api('/api/topqueries').catch(() => [])]);
+  $('#topQueriesTable').innerHTML = table(topq, [
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Database', k: 'DatabaseName' },
+    { h: 'Execs',    k: 'ExecCount', f: num },
+    { h: 'Total CPU',k: 'TotalCpuMs', f: v => v == null ? '—' : (v/1000).toFixed(1) + 's' },
+    { h: 'Avg CPU',  k: 'AvgCpuMs', f: v => v == null ? '—' : v + 'ms' },
+    { h: 'Avg dur',  k: 'AvgDurMs', f: v => v == null ? '—' : v + 'ms' },
+    { h: 'Avg reads',k: 'AvgReads', f: num },
+    { h: 'Query',    k: 'QueryText', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 70))}${(v||'').length > 70 ? '…' : ''}</span>` },
+  ]);
+  $('#vitalsTable').innerHTML = table(vitals, [
+    { h: 'Status',  k: 'Status', f: pill },
+    { h: 'Platform',k: 'Platform' },
+    { h: 'Server',  k: 'ServerName' },
+    { h: 'Metric',  k: 'MetricName', f: v => VITAL_LABELS[v] || esc(v) },
+    { h: 'Value',   k: 'MetricValue', f: num },
+  ]);
+  $('#activityTable').innerHTML = table(
+    act.map(r => ({ ...r, Status: r.RowStatus })),   // reuse row highlighting
+    [
+      { h: 'Status',  k: 'Status', f: pill },
+      { h: 'Platform',k: 'Platform' },
+      { h: 'Server',  k: 'ServerName' },
+      { h: 'Session', k: 'SessionID' },
+      { h: 'Blocked by', k: 'BlockedBy', f: v => v ? `<b>${v}</b>` : '—' },
+      { h: 'Wait',    k: 'WaitType' },
+      { h: 'Duration',k: 'DurationSec', f: fmtLag },
+      { h: 'Database',k: 'DatabaseName' },
+      { h: 'Login',   k: 'LoginName' },
+      { h: 'Query',   k: 'QueryText', f: v => `<span title="${esc(v)}">${esc((v || '').slice(0, 70))}${(v||'').length > 70 ? '…' : ''}</span>` },
+    ]);
+  $('#waitsTable').innerHTML = table(waits, [
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Wait type',k: 'WaitType' },
+    { h: 'Wait time (ms)', k: 'WaitTimeMs', f: num },
+    { h: '% of waits', k: 'WaitPct', f: v => v == null ? '—' : `<span class="bar${v >= 40 ? ' warn' : ''}"><i style="width:${Math.min(v,100)}%"></i></span>${v}%` },
+  ]);
+  $('#tableHealthTable').innerHTML = table(thl, [
+    { h: 'Status',  k: 'Status', f: pill },
+    { h: 'Cluster', k: 'ServerName' },
+    { h: 'Table',   k: 'TableName' },
+    { h: 'Unsorted %', k: 'UnsortedPct', f: v => v + '%' },
+    { h: 'Stats off %', k: 'StatsOffPct', f: v => v + '%' },
+    { h: 'Rows',    k: 'TableRows', f: num },
+  ]);
+}
+
+/* ---- growth (SVG line chart, no chart library) ---- */
+function lineChart(points, unit, key = 'SizeGB') {
+  if (!points || points.length < 2) return '<div class="empty">Not enough history yet — needs at least 2 days of collections.</div>';
+  const W = 900, H = 300, pad = { l: 56, r: 20, t: 16, b: 28 };
+  const xs = points.map((_, i) => i), ys = points.map(p => Number(p[key]));
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const yLo = yMin - (yMax - yMin || 1) * 0.1, yHi = yMax + (yMax - yMin || 1) * 0.1;
+  const px = i => pad.l + (i / (points.length - 1)) * (W - pad.l - pad.r);
+  const py = v => pad.t + (1 - (v - yLo) / (yHi - yLo || 1)) * (H - pad.t - pad.b);
+  const line = points.map((p, i) => `${px(i)},${py(ys[i])}`).join(' ');
+  const area = `${pad.l},${py(yLo)} ${line} ${px(points.length - 1)},${py(yLo)}`;
+  const yticks = [0, .25, .5, .75, 1].map(f => { const v = yLo + f * (yHi - yLo); return { v, y: py(v) }; });
+  const step = Math.ceil(points.length / 8);
+  const xlabels = points.map((p, i) => ({ i, d: p.Day })).filter((_, i) => i % step === 0);
+  const first = ys[0], last = ys[ys.length - 1], delta = (last - first).toFixed(1);
+  return `
+    <div class="chart-head"><span class="muted">${points.length} days · </span>
+      <b>${last.toFixed(1)} ${unit}</b> now ·
+      <span class="${delta >= 0 ? 'up' : 'down'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)} ${unit}</span> over window</div>
+    <svg viewBox="0 0 ${W} ${H}" class="linechart" preserveAspectRatio="xMidYMid meet">
+      ${yticks.map(t => `<line x1="${pad.l}" y1="${t.y}" x2="${W - pad.r}" y2="${t.y}" class="grid"/>
+         <text x="${pad.l - 8}" y="${t.y + 4}" class="ytick">${t.v.toFixed(1)}</text>`).join('')}
+      <polygon points="${area}" class="area"/>
+      <polyline points="${line}" class="line"/>
+      ${points.map((p, i) => `<circle cx="${px(i)}" cy="${py(ys[i])}" r="2.5" class="dot"><title>${p.Day}: ${ys[i]} ${unit}</title></circle>`).join('')}
+      ${xlabels.map(l => `<text x="${px(l.i)}" y="${H - 8}" class="xtick">${l.d.slice(5)}</text>`).join('')}
+    </svg>`;
+}
+
+let growthKeys = [];
+async function loadGrowth() {
+  growthKeys = await api('/api/growthkeys');
+  const sel = $('#growthKey');
+  if (!growthKeys.length) { sel.innerHTML = ''; $('#growthChart').innerHTML = '<div class="empty">No size history collected yet.</div>'; $('#growthTable').innerHTML = ''; return; }
+  if (!sel.dataset.filled) {
+    sel.innerHTML = growthKeys.map((k, i) =>
+      `<option value="${i}">${esc(k.Platform)} · ${esc(k.ServerName)} · ${esc(k.ObjectName)} (${k.CurrentGB} GB)</option>`).join('');
+    sel.dataset.filled = '1';
+  }
+  await drawGrowth();
+  // top movers table
+  $('#growthTable').innerHTML = table(growthKeys, [
+    { h: 'Platform', k: 'Platform' },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Object',   k: 'ObjectName' },
+    { h: 'Type',     k: 'ObjectType' },
+    { h: 'Current',  k: 'CurrentGB', f: v => v + ' GB' },
+    { h: 'Δ window', k: 'DeltaGB', f: v => (v >= 0 ? '+' : '') + v + ' GB' },
+    { h: 'Growth/day', k: 'GrowthGBPerDay', f: v => v + ' GB' },
+  ]);
+}
+
+async function drawGrowth() {
+  const k = growthKeys[Number($('#growthKey').value) || 0];
+  if (!k) return;
+  const qs = `platform=${encodeURIComponent(k.Platform)}&server=${encodeURIComponent(k.ServerName)}&object=${encodeURIComponent(k.ObjectName)}`;
+  const pts = await api('/api/growth?' + qs);
+  $('#growthChart').innerHTML = lineChart(pts, 'GB');
+}
+
+async function loadAlerts() {
+  const rows = await api('/api/alerts');
+  $('#alertsTable').innerHTML = table(rows, [
+    { h: 'Severity', k: 'Severity', f: pill },
+    { h: 'Category', k: 'Category' },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Detail',   k: 'Message' },
+    { h: 'Owner',    k: 'Owner' },
+    { h: 'Since',    k: 'FirstSeen', f: v => v ? new Date(v + 'Z').toLocaleString() : '—' },
+    { h: 'Notified', k: 'NotifiedAt', f: v => v ? '✓' : '—' },
+  ]);
+}
+
+/* ---- owner form ---- */
+const FIELDS = ['AppOwnerID','ServerName','DatabaseName','AppName','Criticality',
+                'PrimaryOwner','SecondaryOwner','Team','Email','OnCallPhone','Notes'];
+
+function showForm(show) { $('#ownerForm').classList.toggle('hidden', !show); $('#formMsg').textContent = ''; }
+function clearForm() { FIELDS.forEach(f => { const el = $('#f_' + f); if (el) el.value = f === 'AppOwnerID' ? '0' : ''; }); }
+
+window.editOwner = function (r) {
+  showForm(true);
+  FIELDS.forEach(f => { const el = $('#f_' + f); if (el) el.value = r[f] ?? ''; });
+  $('#f_AppOwnerID').value = r.AppOwnerID || 0;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+window.delOwner = async function (id) {
+  if (!confirm('Delete this owner record?')) return;
+  await api('/api/owners/delete', { method: 'POST', body: JSON.stringify({ AppOwnerID: id }) });
+  loadOwners(); loadKpis();
+};
+
+async function saveOwner() {
+  const body = {};
+  FIELDS.forEach(f => body[f] = $('#f_' + f)?.value ?? '');
+  if (!body.ServerName || !body.AppName) { $('#formMsg').textContent = 'Server and App are required.'; return; }
+  const res = await api('/api/owners', { method: 'POST', body: JSON.stringify(body) });
+  if (res.error) { $('#formMsg').textContent = 'Error: ' + res.error; return; }
+  showForm(false); clearForm(); loadOwners(); loadKpis();
+}
+
+/* ---- servers tab (inventory management) ---- */
+const S_FIELDS = ['ServerName','Platform','Environment','FriendlyName','IsActive'];
+
+async function loadServers() {
+  const [rows, owners] = await Promise.all([api('/api/servers'), api('/api/owners').catch(() => [])]);
+  // index owners by server so each server row can show who owns it
+  const ownersBy = {};
+  (owners || []).forEach(o => { (ownersBy[o.ServerName] = ownersBy[o.ServerName] || []).push(o); });
+  $('#serversTable').innerHTML = table(rows, [
+    { h: 'Active',   k: 'IsActive', f: v => v ? '<span class="pill OK">ACTIVE</span>' : '<span class="pill WARN">PAUSED</span>' },
+    { h: 'Server',   k: 'ServerName' },
+    { h: 'Platform', k: 'Platform' },
+    { h: 'Env',      k: 'Environment' },
+    { h: 'App / Owner', k: 'ServerName', f: (v, r) => {
+        const os = ownersBy[r.ServerName] || [];
+        if (!os.length) return '<span class="muted">unassigned</span>';
+        const first = os[0];
+        const more = os.length > 1 ? ` <span class="muted">+${os.length - 1}</span>` : '';
+        const title = os.map(o => `${o.AppName} — ${o.PrimaryOwner || '?'} (${o.Criticality || 'Tier?'})`).join('\n');
+        return `<span title="${esc(title)}"><b>${esc(first.AppName)}</b> · ${esc(first.PrimaryOwner || '—')}${more}</span>`;
+      } },
+    { h: 'Auth',     k: 'AuthType', f: (v, r) => v === 'sql'
+        ? `SQL login${r.UserName ? ' (' + esc(r.UserName) + ')' : ''}${r.HasPassword ? ' 🔒' : ''}`
+        : 'Windows' },
+    { h: 'Friendly name', k: 'FriendlyName' },
+    { h: 'Last collected', k: 'LastCollectedAt', f: v => v ? new Date(v + 'Z').toLocaleString() : 'never' },
+    { h: 'Last status', k: 'LastStatus', f: (v, r) => v == null ? '—'
+        : v === 'OK' ? pill('OK') : `<span class="pill CRIT" title="${esc(r.LastMessage)}">ERROR</span>` },
+    { h: '', k: 'ServerID', f: (v, r) =>
+        `<span class="link" onclick='editServer(${JSON.stringify(r).replace(/'/g,"&#39;")})'>edit</span> ·
+         <span class="link danger" onclick="delServer(${v})">del</span>` },
+  ]);
+}
+
+function showServerForm(show) { $('#serverForm').classList.toggle('hidden', !show); $('#serverFormMsg').textContent = ''; }
+function clearServerForm() {
+  $('#s_ServerName').value = ''; $('#s_Platform').value = 'MSSQL';
+  $('#s_Environment').value = 'PROD'; $('#s_FriendlyName').value = ''; $('#s_IsActive').value = '1';
+  $('#s_AuthType').value = 'windows'; $('#s_Host').value = ''; $('#s_Port').value = '';
+  $('#s_DatabaseName').value = ''; $('#s_UserName').value = ''; $('#s_Password').value = '';
+  syncConnFields();
+}
+
+// DBeaver-style form behavior: Redshift => host/port/db + always DB-user auth;
+// MSSQL => connect by name, credentials only when SQL login is chosen.
+function syncConnFields() {
+  const rs = $('#s_Platform').value === 'Redshift';
+  if (rs) $('#s_AuthType').value = 'sql';
+  $('#s_AuthType').disabled = rs;
+  $$('#serverForm label.conn').forEach(l => l.style.display = rs ? '' : 'none');
+  const creds = rs || $('#s_AuthType').value === 'sql';
+  $$('#serverForm label.cred').forEach(l => l.style.display = creds ? '' : 'none');
+}
+
+function serverFormBody() {
+  return {
+    ServerName: $('#s_ServerName').value.trim(), Platform: $('#s_Platform').value,
+    Environment: $('#s_Environment').value, FriendlyName: $('#s_FriendlyName').value.trim(),
+    IsActive: $('#s_IsActive').value === '1', AuthType: $('#s_AuthType').value,
+    Host: $('#s_Host').value.trim(), Port: $('#s_Port').value.trim(),
+    DatabaseName: $('#s_DatabaseName').value.trim(),
+    UserName: $('#s_UserName').value.trim(), Password: $('#s_Password').value,
+  };
+}
+
+window.editServer = function (r) {
+  showServerForm(true);
+  $('#s_ServerName').value = r.ServerName || '';
+  $('#s_Platform').value = r.Platform || 'MSSQL';
+  $('#s_Environment').value = r.Environment || 'PROD';
+  $('#s_FriendlyName').value = r.FriendlyName || '';
+  $('#s_IsActive').value = r.IsActive ? '1' : '0';
+  $('#s_AuthType').value = r.AuthType || 'windows';
+  $('#s_Host').value = r.Host || ''; $('#s_Port').value = r.Port || '';
+  $('#s_DatabaseName').value = r.DatabaseName || '';
+  $('#s_UserName').value = r.UserName || ''; $('#s_Password').value = '';
+  syncConnFields();
+};
+
+async function testServer() {
+  const msg = $('#serverFormMsg');
+  msg.textContent = 'Testing…';
+  try {
+    const res = await api('/api/servers/test', { method: 'POST', body: JSON.stringify(serverFormBody()) });
+    msg.innerHTML = res.ok ? `<span style="color:var(--ok)">✔ ${esc(res.message)}</span>`
+                           : `<span style="color:var(--crit)">✘ ${esc(res.message)}</span>`;
+  } catch (e) { msg.textContent = 'Test failed: ' + e; }
+}
+
+window.delServer = async function (id) {
+  if (!confirm('Remove this server from inventory? (History rows are kept until purge.)')) return;
+  await api('/api/servers/delete', { method: 'POST', body: JSON.stringify({ ServerID: id }) });
+  loadServers(); loadKpis();
+};
+
+async function saveServer() {
+  const body = serverFormBody();
+  if (!body.ServerName) { $('#serverFormMsg').textContent = 'Server name is required.'; return; }
+  if (body.Platform === 'Redshift' && !body.Host) { $('#serverFormMsg').textContent = 'Redshift needs a Host endpoint.'; return; }
+  const res = await api('/api/servers', { method: 'POST', body: JSON.stringify(body) });
+  if (res.error) { $('#serverFormMsg').textContent = 'Error: ' + res.error; return; }
+  showServerForm(false); clearServerForm(); loadServers(); loadKpis();
+}
+
+/* ---- wiring ---- */
+function refreshActive() {
+  const t = $('.tab.active').dataset.tab;
+  ({ estate: loadEstate, ag: loadAg, lag: loadLag, disk: loadDisk, growth: loadGrowth,
+     health: loadHealth, activity: loadActivity,
+     alerts: loadAlerts, owners: loadOwners, servers: loadServers }[t])();
+  loadKpis();
+}
+
+function switchTab(name) {
+  const btn = $(`.tab[data-tab="${name}"]`);
+  if (!btn) return;
+  $$('.tab').forEach(x => x.classList.remove('active'));
+  $$('.panel').forEach(x => x.classList.remove('active'));
+  btn.classList.add('active');
+  $('#tab-' + name).classList.add('active');
+  refreshActive();
+}
+
+$$('.tab').forEach(t => t.addEventListener('click', () => switchTab(t.dataset.tab)));
+
+// estate-grid cells drill into the matching domain tab
+$('#estateGrid').addEventListener('click', e => {
+  const cell = e.target.closest('.est-cell[data-tab]');
+  if (cell) switchTab(cell.dataset.tab);
+});
+
+// KPI cards are shortcuts to the tab where you can act on the number.
+// Delegated (cards re-render every refresh); Enter/Space work for keyboard users.
+$('#kpis').addEventListener('click', e => {
+  const card = e.target.closest('.kpi[data-tab]');
+  if (card) switchTab(card.dataset.tab);
+});
+$('#kpis').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('.kpi[data-tab]');
+  if (card) { e.preventDefault(); switchTab(card.dataset.tab); }
+});
+
+$('#refreshBtn').addEventListener('click', refreshActive);
+$('#growthKey').addEventListener('change', drawGrowth);
+$('#newOwnerBtn').addEventListener('click', () => { clearForm(); showForm(true); });
+$('#cancelOwnerBtn').addEventListener('click', () => showForm(false));
+$('#saveOwnerBtn').addEventListener('click', saveOwner);
+$('#newServerBtn').addEventListener('click', () => { clearServerForm(); showServerForm(true); });
+$('#cancelServerBtn').addEventListener('click', () => showServerForm(false));
+$('#saveServerBtn').addEventListener('click', saveServer);
+$('#testServerBtn').addEventListener('click', testServer);
+$('#s_Platform').addEventListener('change', syncConnFields);
+$('#s_AuthType').addEventListener('change', syncConnFields);
+
+let timer = null;
+function setAuto(on) { clearInterval(timer); if (on) timer = setInterval(refreshActive, 30000); }
+$('#autoRefresh').addEventListener('change', e => setAuto(e.target.checked));
+
+/* ---- theme (dark default, light optional) — persisted in localStorage ---- */
+function applyTheme(mode) {
+  document.documentElement.setAttribute('data-theme', mode);
+  $('#themeBtn').textContent = mode === 'light' ? '☀' : '☾';
+}
+applyTheme(localStorage.getItem('dbadash-theme') || 'dark');
+$('#themeBtn').addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  localStorage.setItem('dbadash-theme', next); applyTheme(next);
+});
+
+/* ---- client branding — drop a logo + name in www/branding.json ----
+   { "productName": "...", "tagline": "...", "logoUrl": "logo.png" }        */
+async function applyBranding() {
+  try {
+    const b = await fetch('branding.json').then(r => r.ok ? r.json() : null);
+    if (!b) return;
+    if (b.productName) { $('#brandName').textContent = b.productName; document.title = b.productName; }
+    if (b.tagline) $('#brandTag').textContent = b.tagline;
+    if (b.logoUrl) $('#brandLogo').outerHTML =
+      `<img id="brandLogo" class="logo-img" src="${esc(b.logoUrl)}" alt="${esc(b.productName || 'logo')}" />`;
+  } catch (e) { /* no branding file — keep defaults */ }
+}
+applyBranding();
+
+loadKpis(); loadEstate(); setAuto(true);

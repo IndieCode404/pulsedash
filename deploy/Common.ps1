@@ -1,0 +1,248 @@
+<#
+    DBADash | Common.ps1
+    Shared helpers for deploy + collectors. Dot-source this:  . "$PSScriptRoot\Common.ps1"
+    Uses only System.Data (SqlClient + Odbc) so there are NO PowerShell module
+    dependencies - runs on a stock Windows box with SQL Server tools.
+#>
+
+Add-Type -AssemblyName System.Data | Out-Null
+Add-Type -AssemblyName System.Security | Out-Null
+
+# DPAPI (LocalMachine scope): encrypt/decrypt secrets so they are only usable on
+# THIS box. The dashboard encrypts before storing in cfg.Servers.PasswordEnc;
+# the collector (same machine) decrypts. Plaintext never reaches the database.
+function Protect-DbaDashSecret {
+    param([string]$PlainText)
+    if ([string]::IsNullOrEmpty($PlainText)) { return $null }
+    return [System.Security.Cryptography.ProtectedData]::Protect(
+        [Text.Encoding]::UTF8.GetBytes($PlainText), $null,
+        [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+}
+function Unprotect-DbaDashSecret {
+    param([byte[]]$Blob)
+    if (-not $Blob -or $Blob.Length -eq 0) { return '' }
+    return [Text.Encoding]::UTF8.GetString(
+        [System.Security.Cryptography.ProtectedData]::Unprotect(
+            $Blob, $null,
+            [System.Security.Cryptography.DataProtectionScope]::LocalMachine))
+}
+
+function Get-DbaDashConfig {
+    param([string]$Path = "$PSScriptRoot\config\dbadash.json")
+    if (-not (Test-Path $Path)) {
+        throw "Config not found: $Path  (copy config\dbadash.example.json to dbadash.json and edit it)"
+    }
+    return Get-Content -Raw -Path $Path | ConvertFrom-Json
+}
+
+# Build a SQL Server connection string. Empty user => Windows/Integrated auth.
+# Uses SqlConnectionStringBuilder so instance/user/password values are safely
+# encoded (no connection-string injection via a stray ';' or '=').
+# NOTE: TrustServerCertificate is on - the collector trusts its targets but does
+# NOT validate the TLS cert. On an untrusted network, set it to $false and
+# install the target certs so the link can't be MITM'd.
+function Get-SqlConnString {
+    param([string]$Instance, [string]$Database = 'master', [string]$User, [string]$Password)
+    # NOTE: set via the INDEXER using real connection-string keywords, not the .NET
+    # property names. SqlConnectionStringBuilder implements IDictionary, so in
+    # Windows PowerShell "$b.DataSource = x" binds to the dictionary indexer and
+    # fails with "Keyword not supported: 'DataSource'".
+    $b = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
+    $b['Data Source']            = $Instance
+    $b['Initial Catalog']        = $Database
+    $b['TrustServerCertificate'] = $true
+    $b['Connect Timeout']        = 15
+    $b['Application Name']       = 'DBADash'
+    if ([string]::IsNullOrWhiteSpace($User)) { $b['Integrated Security'] = $true }
+    else { $b['User ID'] = $User; $b['Password'] = $Password }
+    return $b.ConnectionString
+}
+
+# Run a query against SQL Server and return a DataTable (empty table if no rows).
+function Invoke-SqlQuery {
+    param([string]$ConnString, [string]$Query, [int]$TimeoutSec = 60)
+    $conn = New-Object System.Data.SqlClient.SqlConnection $ConnString
+    try {
+        $conn.Open()
+        $cmd = $conn.CreateCommand(); $cmd.CommandText = $Query; $cmd.CommandTimeout = $TimeoutSec
+        $da = New-Object System.Data.SqlClient.SqlDataAdapter $cmd
+        $dt = New-Object System.Data.DataTable
+        [void]$da.Fill($dt)
+        return ,$dt
+    } finally { $conn.Dispose() }
+}
+
+# Run a non-query (or scalar-ish) statement against SQL Server.
+function Invoke-SqlNonQuery {
+    param([string]$ConnString, [string]$Query, [int]$TimeoutSec = 120)
+    $conn = New-Object System.Data.SqlClient.SqlConnection $ConnString
+    try {
+        $conn.Open()
+        $cmd = $conn.CreateCommand(); $cmd.CommandText = $Query; $cmd.CommandTimeout = $TimeoutSec
+        return $cmd.ExecuteNonQuery()
+    } finally { $conn.Dispose() }
+}
+
+# Bulk-load a DataTable into a central table. DataTable column names must match
+# the destination column names (mapped by name, so column order is irrelevant).
+# Real column names of a destination table (cached). Excludes identity/computed
+# columns, which cannot be bulk-inserted into.
+$script:DbaDashDestCols = @{}
+function Get-DestinationColumns {
+    param([string]$ConnString, [string]$Destination)
+    if ($script:DbaDashDestCols.ContainsKey($Destination)) { return $script:DbaDashDestCols[$Destination] }
+    $cols = New-Object 'System.Collections.Generic.List[string]'
+    $c = New-Object System.Data.SqlClient.SqlConnection $ConnString
+    try {
+        $c.Open(); $cmd = $c.CreateCommand()
+        $cmd.CommandText = "SELECT name FROM sys.columns
+                            WHERE object_id = OBJECT_ID(@t) AND is_computed = 0 AND is_identity = 0"
+        [void]$cmd.Parameters.AddWithValue('@t', $Destination)
+        $r = $cmd.ExecuteReader()
+        while ($r.Read()) { $cols.Add($r.GetString(0)) }
+        $r.Close()
+    } finally { $c.Dispose() }
+    $script:DbaDashDestCols[$Destination] = $cols
+    return $cols
+}
+
+# Bulk-load a DataTable into a central table, mapping BY NAME (order irrelevant).
+# Source column names are matched case-INSENSITIVELY and mapped to the destination's
+# real casing - Redshift/ODBC returns lowercase aliases ("volumename"), and
+# SqlBulkCopy's own mapping is case-sensitive, which otherwise fails with
+# "the given columnmapping does not match up with any column in the source or destination".
+function Write-BulkTable {
+    param([string]$ConnString, [System.Data.DataTable]$Table, [string]$Destination)
+    if ($Table.Rows.Count -eq 0) { return 0 }
+
+    $destCols = Get-DestinationColumns -ConnString $ConnString -Destination $Destination
+    if ($destCols.Count -eq 0) { throw "Write-BulkTable: destination table '$Destination' not found." }
+
+    $pairs   = @()
+    $missing = @()
+    foreach ($col in $Table.Columns) {
+        $match = $destCols | Where-Object { $_ -eq $col.ColumnName } | Select-Object -First 1   # -eq is case-insensitive
+        if ($match) { $pairs += ,@($col.ColumnName, [string]$match) } else { $missing += $col.ColumnName }
+    }
+    if ($missing.Count -gt 0) {
+        throw ("Write-BulkTable -> {0}: {1} source column(s) have no destination match: {2}`n" -f
+                    $Destination, $missing.Count, ($missing -join ', ')) +
+              ("  source cols: {0}`n" -f (@($Table.Columns | ForEach-Object { $_.ColumnName }) -join ', ')) +
+              ("  dest cols  : {0}" -f (($destCols | Sort-Object) -join ', '))
+    }
+
+    $bulk = New-Object System.Data.SqlClient.SqlBulkCopy($ConnString)
+    try {
+        $bulk.DestinationTableName = $Destination
+        foreach ($p in $pairs) { [void]$bulk.ColumnMappings.Add($p[0], $p[1]) }
+        $bulk.WriteToServer($Table)
+        return $Table.Rows.Count
+    } finally { $bulk.Close() }
+}
+
+# Append the shared "envelope" columns onto a raw result set. Platform is only
+# added when supplied (mon.AGSyncStatus has no Platform column, mon.DiskUsage does).
+function Add-Envelope {
+    param([System.Data.DataTable]$Table, [string]$ServerName, [string]$Platform, [datetime]$CollectedAt)
+    if (-not $Table.Columns.Contains('ServerName'))  { [void]$Table.Columns.Add('ServerName',  [string]) }
+    if (-not $Table.Columns.Contains('CollectedAt')) { [void]$Table.Columns.Add('CollectedAt', [datetime]) }
+    if ($Platform -and -not $Table.Columns.Contains('Platform')) { [void]$Table.Columns.Add('Platform', [string]) }
+    foreach ($row in $Table.Rows) {
+        $row['ServerName']  = $ServerName
+        $row['CollectedAt'] = $CollectedAt
+        if ($Platform) { $row['Platform'] = $Platform }
+    }
+    return ,$Table
+}
+
+# Write a row to cfg.CollectionLog on the central server.
+function Write-CollectionLog {
+    param([string]$CentralConn, [string]$Collector, [string]$ServerName,
+          [string]$Status, [int]$RowsLoaded = 0, [string]$Message = '')
+    $q = @"
+INSERT DBADash.cfg.CollectionLog (Collector, ServerName, Status, RowsLoaded, Message)
+VALUES (@c, @s, @st, @r, @m);
+"@
+    $conn = New-Object System.Data.SqlClient.SqlConnection $CentralConn
+    try {
+        $conn.Open(); $cmd = $conn.CreateCommand(); $cmd.CommandText = $q
+        $srv = if ([string]::IsNullOrEmpty($ServerName)) { [DBNull]::Value } else { $ServerName }
+        $msg = if ($null -eq $Message) { '' } else { $Message }
+        [void]$cmd.Parameters.AddWithValue('@c',  $Collector)
+        [void]$cmd.Parameters.AddWithValue('@s',  $srv)
+        [void]$cmd.Parameters.AddWithValue('@st', $Status)
+        [void]$cmd.Parameters.AddWithValue('@r',  $RowsLoaded)
+        [void]$cmd.Parameters.AddWithValue('@m',  $msg)
+        [void]$cmd.ExecuteNonQuery()
+    } catch { Write-Warning "log write failed: $($_.Exception.Message)" }
+      finally { $conn.Dispose() }
+}
+
+# Upsert a row into cfg.Servers so the inventory / Overview KPIs stay accurate.
+function Register-Server {
+    param([string]$CentralConn, [string]$ServerName, [string]$Platform,
+          [string]$Environment = 'PROD', [string]$FriendlyName = $null)
+    $q = @"
+MERGE DBADash.cfg.Servers AS t
+USING (SELECT @n AS ServerName) AS s ON t.ServerName = s.ServerName
+WHEN MATCHED THEN UPDATE SET Platform=@p, Environment=@e, IsActive=1,
+     FriendlyName=COALESCE(@f, t.FriendlyName)
+WHEN NOT MATCHED THEN INSERT (ServerName, Platform, Environment, FriendlyName)
+     VALUES (@n, @p, @e, @f);
+"@
+    $conn = New-Object System.Data.SqlClient.SqlConnection $CentralConn
+    try {
+        $conn.Open(); $cmd = $conn.CreateCommand(); $cmd.CommandText = $q
+        [void]$cmd.Parameters.AddWithValue('@n', $ServerName)
+        [void]$cmd.Parameters.AddWithValue('@p', $Platform)
+        [void]$cmd.Parameters.AddWithValue('@e', $Environment)
+        $fn = if ([string]::IsNullOrEmpty($FriendlyName)) { [DBNull]::Value } else { $FriendlyName }
+        [void]$cmd.Parameters.AddWithValue('@f', $fn)
+        [void]$cmd.ExecuteNonQuery()
+    } finally { $conn.Dispose() }
+}
+
+# Run a query against Redshift via ODBC and return a DataTable.
+function Invoke-OdbcQuery {
+    param([string]$ConnString, [string]$Query, [int]$TimeoutSec = 60)
+    $conn = New-Object System.Data.Odbc.OdbcConnection $ConnString
+    try {
+        $conn.Open()
+        $cmd = $conn.CreateCommand(); $cmd.CommandText = $Query; $cmd.CommandTimeout = $TimeoutSec
+        $da = New-Object System.Data.Odbc.OdbcDataAdapter $cmd
+        $dt = New-Object System.Data.DataTable
+        [void]$da.Fill($dt)
+        return ,$dt
+    } finally { $conn.Dispose() }
+}
+
+# Pull one named block (--==NAME==-- ... ) out of redshift_metrics.sql.
+function Get-SqlBlock {
+    param([string]$Path, [string]$Name)
+    $text = Get-Content -Raw -Path $Path
+    $m = [regex]::Match($text, "(?ms)--==$Name==--\s*(.*?)(?=^--==|\z)")
+    if (-not $m.Success) { throw "SQL block '$Name' not found in $Path" }
+    return $m.Groups[1].Value.Trim()
+}
+
+# Enumerate instances registered under a CMS group (reads msdb shared reg servers).
+function Get-CmsRegisteredServers {
+    param([string]$CmsInstance, [string]$Group)
+    $q = @"
+;WITH g AS (
+    SELECT server_group_id FROM msdb.dbo.sysmanagement_shared_server_groups_internal
+    WHERE name = @grp
+)
+SELECT s.server_name
+FROM msdb.dbo.sysmanagement_shared_registered_servers_internal s
+WHERE s.server_group_id IN (SELECT server_group_id FROM g);
+"@
+    $conn = New-Object System.Data.SqlClient.SqlConnection (Get-SqlConnString -Instance $CmsInstance -Database 'msdb')
+    try {
+        $conn.Open(); $cmd = $conn.CreateCommand(); $cmd.CommandText = $q
+        [void]$cmd.Parameters.AddWithValue('@grp', $Group)
+        $r = $cmd.ExecuteReader(); $list = @()
+        while ($r.Read()) { $list += $r['server_name'] }
+        return $list
+    } finally { $conn.Dispose() }
+}

@@ -1,0 +1,52 @@
+{
+  "central": {
+    "//": "Where the DBADash database lives. All collectors load here.",
+    "//sqlInstance": "LEAVE BLANK on a fresh install - Deploy-DBADash.ps1 will prompt and save it. Examples: 'SQLMON01', '.\\SQLEXPRESS', 'HOST\\INSTANCE'.",
+    "sqlInstance": "",
+    "database": "DBADash",
+    "//auth": "Leave user/password empty to use Windows/Integrated auth.",
+    "user": "",
+    "password": ""
+  },
+
+  "cms": {
+    "//": "MSSQL targets come from THREE sources, all merged: (1) a CMS group,",
+    "//2": "(2) the mssqlInstances list below, (3) servers added on the dashboard 'Servers' tab.",
+    "//3": "Blank cmsInstance / null group = skip CMS entirely (default).",
+    "cmsInstance": "",
+    "group": null,
+
+    "//mssqlInstances": "Strings connect with Windows auth. For SQL auth use an object:",
+    "//example": "[ \"SQLPROD07\", { \"instance\": \"SQLDMZ01\", \"user\": \"dbadash_ro\", \"password\": \"\", \"passwordEnvVar\": \"DBADASH_DMZ_PWD\" } ]",
+    "mssqlInstances": []
+  },
+
+  "//redshift": "Empty = skip Redshift collection. Add one object per cluster, e.g.:",
+  "//redshiftExample": "{ \"clusterId\": \"rs-analytics\", \"environment\": \"PROD\", \"host\": \"rs-analytics.abc123.us-east-1.redshift.amazonaws.com\", \"port\": 5439, \"database\": \"analytics\", \"user\": \"dbadash_ro\", \"password\": \"\", \"dsn\": \"\" }",
+  "//redshiftPassword": "Prefer the DBADASH_RS_PWD env var, or add the cluster on the dashboard 'Servers' tab (DPAPI-encrypted).",
+  "redshift": [],
+
+  "alerting": {
+    "//": "Email active CRIT/WARN alerts. transport = 'smtp' or 'dbmail'.",
+    "enabled": false,
+    "transport": "smtp",
+    "recipients": ["dba-team@corp.com"],
+    "//routeToOwners": "Also email the app owner's address from cfg.AppOwners.",
+    "routeToOwners": true,
+    "//dbmailProfile": "Database Mail profile name (only used when transport='dbmail').",
+    "dbmailProfile": "DBADash",
+    "//smtpHost": "Internal relay: smtp.corp.com / port 25 / useSsl false / no auth (ask your mail team). Office 365: smtp.office365.com / 587 / true / auth required.",
+    "smtp": {
+      "host": "smtp.corp.com",
+      "port": 25,
+      "from": "dbadash@corp.com",
+      "useSsl": false,
+      "//auth": "Leave user blank for an anonymous relay. If the relay needs credentials, set user and prefer passwordEnvVar over storing the password here.",
+      "user": "",
+      "passwordEnvVar": "DBADASH_SMTP_PWD",
+      "password": ""
+    }
+  },
+
+  "retentionDays": 90
+}
